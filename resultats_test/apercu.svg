@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3240 1200" width="1620" height="600">
+<rect width="100%" height="100%" fill="white"/>
+<text x="80.0" y="65.0" font-size="32" font-family="sans-serif">Plaque 1 - 75.7 %</text>
+<rect x="80.0" y="80.0" width="1500.0" height="1000.0" fill="#f4f4f4" stroke="#444" stroke-width="3"/>
+<polygon points="1215.72,876.95 80.05,876.95 250.39,1079.95 1045.39,1079.95 1215.72,876.95" fill="#9ecae1" stroke="#222" stroke-width="2"/>
+<text x="647.9" y="978.4" font-size="22" text-anchor="middle" font-family="sans-serif">P010</text>
+<polygon points="1526.05,1058.93 1572.06,797.95 1061.05,188.95 796.05,188.95 1526.05,1058.93" fill="#a1d99b" stroke="#222" stroke-width="2"/>
+<text x="1184.1" y="493.5" font-size="22" text-anchor="middle" font-family="sans-serif">P011</text>
+<polygon points="80.05,108.54 80.05,206.16 146.05,261.54 684.05,261.54 866.39,108.54 80.05,108.54" fill="#fdd0a2" stroke="#222" stroke-width="2"/>
+<text x="444.1" y="157.4" font-size="22" text-anchor="middle" font-family="sans-serif">P012</text>
+<polygon points="277.24,639.85 80.05,874.85 1269.43,874.85 1072.24,639.85 277.24,639.85" fill="#bcbddc" stroke="#222" stroke-width="2"/>
+<text x="674.7" y="757.3" font-size="22" text-anchor="middle" font-family="sans-serif">P014</text>
+<polygon points="80.05,637.75 1119.55,637.75 1119.55,577.76 999.55,434.75 204.55,434.75 80.05,583.12 80.05,637.75" fill="#fcbba1" stroke="#222" stroke-width="2"/>
+<text x="602.1" y="506.3" font-size="22" text-anchor="middle" font-family="sans-serif">P015</text>
+<polygon points="80.05,333.71 80.05,432.65 867.96,432.65 666.55,263.65 163.55,263.65 80.05,333.71" fill="#c7e9c0" stroke="#222" stroke-width="2"/>
+<text x="444.5" y="383.2" font-size="22" text-anchor="middle" font-family="sans-serif">P016</text>
+<polygon points="1560.58,781.00 1560.58,552.31 1237.26,166.99 1012.04,127.27 1560.58,781.00" fill="#dadaeb" stroke="#222" stroke-width="2"/>
+<text x="1303.0" y="359.6" font-size="22" text-anchor="middle" font-family="sans-serif">P017</text>
+<text x="1660.0" y="65.0" font-size="32" font-family="sans-serif">Plaque 2 - 5.9 %</text>
+<rect x="1660.0" y="80.0" width="1500.0" height="1000.0" fill="#f4f4f4" stroke="#444" stroke-width="3"/>
+<polygon points="2503.14,1079.95 2350.59,951.95 1812.59,951.95 1660.05,1079.95 2503.14,1079.95" fill="#9ecae1" stroke="#222" stroke-width="2"/>
+<text x="2081.6" y="1015.9" font-size="22" text-anchor="middle" font-family="sans-serif">P013</text>
+</svg>
