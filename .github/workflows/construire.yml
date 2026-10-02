@@ -4,6 +4,7 @@ on:
   workflow_dispatch:        # bouton « Run workflow » dans l'onglet Actions
   push:
     tags: ["v*"]            # un tag v1.0.0 construit et publie une release
+    branches: ["claude/isolant-cutting-optimization-xgqpe3"]   # construit aussi à chaque envoi de cette branche
 
 jobs:
   construire:
