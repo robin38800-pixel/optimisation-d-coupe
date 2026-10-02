@@ -26,6 +26,9 @@ python -m decoupe pieces.dxf -o resultat.dxf --espacement 3 --temps 60
 | `--temps` | durée de la recherche en secondes (plus long = souvent meilleur) | 30 |
 | `--jobs` | nombre de processus (0 = tous les coeurs) | 0 |
 | `--calque NOM` | ne lit que ce calque du DXF (répétable) | tous |
+| `--lister` | affiche les contours détectés (nom, taille, aire) puis s'arrête | non |
+| `--ignorer-profils E` | ignore les contours dont le plus petit côté est ≤ E mm (vues de profil d'un plan) | non |
+| `--ignorer NOM` | ignore la pièce de ce nom (voir `--lister`), répétable | non |
 | `--echelle` | facteur vers les mm si le DXF est en cm (10) ou m (1000) | 1 |
 | `--separe` | un DXF par plaque (`resultat_plaque1.dxf`, ...) | un seul fichier |
 | `--apercu f.svg` | écrit aussi un aperçu visuel | non |
@@ -41,6 +44,11 @@ Chaque **contour fermé** est une pièce : polylignes fermées (LWPOLYLINE/POLYL
 ellipses, splines fermées, et suites de LINE/ARC jointives. Les blocs (INSERT) sont dépliés.
 Les contours ouverts sont signalés et ignorés. Si le DXF contient aussi le cadre de la plaque
 ou des cotes, utilisez `--calque` pour ne lire que le calque des découpes.
+**Plan SolidWorks / mise en plan** : un plan contient souvent cadre, cartouche, cotations et
+plusieurs vues de la même pièce (face + profil). Procédure conseillée :
+`--calque FORT` (calque des traits forts) pour écarter cadre et cotes, `--lister` pour voir les
+contours trouvés, puis `--ignorer-profils 30` (épaisseur de l'isolant) et/ou `--ignorer P003` pour
+retirer les vues de profil. Seules les vues de face sont alors découpées.
 Le programme travaille en **mm** (un avertissement s'affiche si le DXF déclare une autre unité).
 
 ## Fichier de sortie

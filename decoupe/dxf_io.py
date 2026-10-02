@@ -159,14 +159,51 @@ def lire_dxf(
 
     if len(pieces) > 1:
         arbre = STRtree([p.polygone for p in pieces])
+        contenues = set()
         for p in pieces:
             for k in arbre.query(p.polygone, predicate="contains"):
                 autre = pieces[int(k)]
                 if autre.id != p.id and autre.polygone.area < p.polygone.area:
-                    avertissements.append(
-                        f"{autre.nom} est située à l'intérieur de {p.nom} (trou ?) : traitée comme pièce distincte"
-                    )
+                    contenues.add(autre.nom)
+        if contenues:
+            avertissements.append(
+                f"{len(contenues)} contour(s) sont situés à l'intérieur d'un autre (cadre de dessin, trous, vues "
+                "imbriquées ?) et sont traités comme des pièces distinctes. Utilisez --calque / --ignorer si besoin."
+            )
     return LectureDxf(pieces=pieces, avertissements=avertissements)
+
+
+def petit_cote(poly: Polygon) -> float:
+    """Plus petite dimension du rectangle englobant (quelle que soit l'orientation)."""
+    xs, ys = poly.minimum_rotated_rectangle.exterior.coords.xy
+    return min(math.hypot(xs[1] - xs[0], ys[1] - ys[0]), math.hypot(xs[2] - xs[1], ys[2] - ys[1]))
+
+
+def filtrer_pieces(
+    pieces: list[Piece], ignorer_profils: float = 0.0, ignorer: Optional[list[str]] = None
+) -> tuple[list[Piece], list[str]]:
+    """Retire les vues de profil (plus petit côté <= ignorer_profils mm) et les pièces nommées."""
+    noms = {n.upper() for n in (ignorer or [])}
+    gardees: list[Piece] = []
+    retirees: list[str] = []
+    for p in pieces:
+        if p.nom.upper() in noms or (ignorer_profils > 0 and petit_cote(p.polygone) <= ignorer_profils + 0.5):
+            retirees.append(p.nom)
+        else:
+            gardees.append(p)
+    return gardees, retirees
+
+
+def decrire_pieces(pieces: list[Piece]) -> str:
+    """Tableau lisible des contours détectés."""
+    lignes = ["  nom    largeur x hauteur (mm)   plus petit côté   aire (cm²)  sommets  calque"]
+    for p in pieces:
+        x0, y0, x1, y1 = p.polygone.bounds
+        lignes.append(
+            f"  {p.nom}  {x1 - x0:9.1f} x {y1 - y0:<9.1f}  {petit_cote(p.polygone):14.1f}  "
+            f"{p.polygone.area / 100:11.1f}  {len(p.polygone.exterior.coords) - 1:7d}  {p.calque}"
+        )
+    return "\n".join(lignes)
 
 
 def _coins(poly: Polygon) -> list[tuple[float, float]]:

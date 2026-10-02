@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from .apercu import ecrire_svg
-from .dxf_io import ecrire_dxf, lire_dxf
+from .dxf_io import decrire_pieces, ecrire_dxf, filtrer_pieces, lire_dxf
 from .modeles import Parametres
 from .nesting import ErreurPlacement, optimiser, verifier
 
@@ -36,6 +36,13 @@ def _arguments(argv=None) -> argparse.Namespace:
                    help="ne regroupe pas les pièces complémentaires (ex. 2 triangles formant un rectangle)")
     p.add_argument("--calque", action="append", metavar="NOM",
                    help="ne lire que ce calque du DXF d'entrée (option répétable)")
+    p.add_argument("--ignorer-profils", type=float, default=0.0, metavar="EPAISSEUR",
+                   help="ignore les contours dont le plus petit côté est <= EPAISSEUR mm "
+                   "(vues de profil d'un plan : ex. 30 pour un isolant de 30 mm)")
+    p.add_argument("--ignorer", action="append", metavar="NOM",
+                   help="ignore la pièce de ce nom (voir --lister), option répétable")
+    p.add_argument("--lister", action="store_true",
+                   help="affiche seulement les contours détectés (nom, taille, aire) puis s'arrête")
     p.add_argument("--tolerance-arc", type=float, default=0.1,
                    help="écart max en mm entre un arc et sa discrétisation (défaut 0.1)")
     p.add_argument("--echelle", type=float, default=1.0, help="facteur d'échelle du DXF d'entrée vers des mm (ex. 10 si cm)")
@@ -54,7 +61,13 @@ def main(argv=None) -> int:
         return 2
     for av in lecture.avertissements:
         print(f"Attention : {av}", file=sys.stderr)
-    pieces = lecture.pieces
+    pieces, retirees = filtrer_pieces(lecture.pieces, a.ignorer_profils, a.ignorer)
+    if retirees:
+        print(f"{len(retirees)} contour(s) ignoré(s) : {', '.join(retirees)}")
+    if a.lister:
+        print(f"{len(pieces)} contour(s) fermé(s) retenu(s) :")
+        print(decrire_pieces(pieces))
+        return 0
     if not pieces:
         print("Aucun contour fermé trouvé dans le DXF.", file=sys.stderr)
         return 2
@@ -75,6 +88,8 @@ def main(argv=None) -> int:
         resultat = optimiser(pieces, params, rappel=print)
     except ErreurPlacement as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
+        print("Astuce : `--lister` montre les contours lus ; `--calque`, `--ignorer` et `--ignorer-profils` "
+              "permettent d'écarter cadres, cotations et vues de profil.", file=sys.stderr)
         return 1
 
     problemes = verifier(resultat)

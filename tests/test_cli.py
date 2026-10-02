@@ -29,3 +29,18 @@ def test_cli_dxf_sans_contour(tmp_path):
     f = tmp_path / "vide.dxf"
     doc.saveas(f)
     assert main([str(f), "-o", str(tmp_path / "s.dxf")]) == 2
+
+
+def test_cli_lister_et_ignorer_profils(tmp_path, capsys):
+    doc = ezdxf.new()
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (400, 0), (400, 300), (0, 300)], close=True)
+    msp.add_lwpolyline([(0, 500), (400, 500), (400, 530), (0, 530)], close=True)  # profil 30 mm
+    f = tmp_path / "plan.dxf"
+    doc.saveas(f)
+    assert main([str(f), "--lister"]) == 0
+    assert "2 contour(s)" in capsys.readouterr().out
+    sortie = tmp_path / "s.dxf"
+    assert main([str(f), "-o", str(sortie), "--ignorer-profils", "30", "--temps", "1", "--jobs", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "1 pièces lues" in out and "P002" in out

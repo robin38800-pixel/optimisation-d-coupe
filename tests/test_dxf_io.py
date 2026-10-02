@@ -86,3 +86,21 @@ def test_ecriture_dxf(tmp_path):
 
     fichiers = ecrire_dxf(tmp_path / "p.dxf", res, separe=True)
     assert [x.name for x in fichiers][0] == "p_plaque1.dxf"
+
+
+def test_filtrage_profils_et_noms(tmp_path):
+    from decoupe.dxf_io import filtrer_pieces, petit_cote
+
+    doc, msp = _doc()
+    msp.add_lwpolyline([(0, 0), (200, 0), (200, 100), (0, 100)], close=True)       # face
+    msp.add_lwpolyline([(0, 300), (200, 300), (200, 330), (0, 330)], close=True)   # profil 30 mm
+    msp.add_lwpolyline([(500, 0), (530, 0), (530, 150), (500, 150)], close=True)   # profil vertical
+    msp.add_lwpolyline([(700, 0), (800, 0), (800, 80), (700, 80)], close=True)
+    f = tmp_path / "e.dxf"
+    doc.saveas(f)
+    pieces = lire_dxf(f).pieces
+    assert abs(petit_cote(pieces[1].polygone) - 30) < 1e-6
+    gardees, retirees = filtrer_pieces(pieces, ignorer_profils=30)
+    assert [p.nom for p in gardees] == ["P001", "P004"] and retirees == ["P002", "P003"]
+    gardees, retirees = filtrer_pieces(pieces, ignorer=["p004"])
+    assert retirees == ["P004"] and len(gardees) == 3
