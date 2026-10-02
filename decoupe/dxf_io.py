@@ -92,6 +92,20 @@ def _vers_polygone(points: list[tuple], echelle: float, avertissements: list[str
     return orient(Polygon(poly.exterior), 1.0)
 
 
+def lister_calques(chemin: str | Path) -> dict[str, int]:
+    """Calques du DXF contenant de la géométrie (lignes, arcs, polylignes...), avec leur nombre d'entités."""
+    try:
+        doc = ezdxf.readfile(str(chemin))
+    except ezdxf.DXFStructureError:
+        doc, _ = recover.readfile(str(chemin))
+    nombre: dict[str, int] = {}
+    for e in _entites_a_plat(doc.modelspace()):
+        if e.dxftype() in TYPES_GEOMETRIQUES:
+            calque = e.dxf.layer if e.dxf.hasattr("layer") else "0"
+            nombre[calque] = nombre.get(calque, 0) + 1
+    return dict(sorted(nombre.items()))
+
+
 def lire_dxf(
     chemin: str | Path,
     calques: Optional[list[str]] = None,

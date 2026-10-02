@@ -17,6 +17,7 @@ Principe
 from __future__ import annotations
 
 import math
+import multiprocessing
 import os
 import time
 from collections import OrderedDict
@@ -597,7 +598,8 @@ def optimiser(
     if jobs == 1:
         sorties = [_travailler(taches[0])]
     else:
-        with ProcessPoolExecutor(max_workers=jobs) as pool:
+        # « spawn » : sûr depuis un thread (interface) et seul mode possible dans l'exécutable Windows
+        with ProcessPoolExecutor(max_workers=jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
             sorties = list(pool.map(_travailler, taches))
     obj, placements, _ = min(sorties, key=lambda s: s[0])
     resultat = _resultat(pieces, unites, placements, params)

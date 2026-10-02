@@ -1,0 +1,95 @@
+name: Construire l'application
+
+on:
+  workflow_dispatch:        # bouton « Run workflow » dans l'onglet Actions
+  push:
+    tags: ["v*"]            # un tag v1.0.0 construit et publie une release
+
+jobs:
+  construire:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, nom: Windows, tests: true}
+          - {os: ubuntu-latest, nom: Linux, tests: true}
+          - {os: macos-latest, nom: macOS, tests: false}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.nom == 'macOS' }}   # macOS : best effort, application non signée
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dépendances système (Linux)
+        if: matrix.nom == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+
+      - name: Installer les dépendances
+        run: python -m pip install -r requirements-dev.txt pyinstaller
+
+      - name: Tests (Linux)
+        if: matrix.tests && matrix.nom == 'Linux'
+        run: xvfb-run -a python -m pytest -q
+      - name: Tests (Windows)
+        if: matrix.tests && matrix.nom == 'Windows'
+        run: python -m pytest -q
+
+      - name: Construire l'exécutable
+        shell: bash
+        run: |
+          OPTIONS="--noconfirm --name DecoupeIsolant --collect-all ezdxf --collect-all shapely"
+          if [ "${{ matrix.nom }}" = "Linux" ]; then
+            pyinstaller $OPTIONS --onefile lancer.py
+          elif [ "${{ matrix.nom }}" = "macOS" ]; then
+            pyinstaller $OPTIONS --windowed --onedir lancer.py
+          else
+            pyinstaller $OPTIONS --windowed --onefile lancer.py
+          fi
+
+      - name: Auto-test de l'exécutable (Windows)
+        if: matrix.nom == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process -FilePath dist\DecoupeIsolant.exe -ArgumentList "--autotest","autotest.txt" -Wait -NoNewWindow
+          Get-Content autotest.txt
+          if (-not (Select-String -Path autotest.txt -Pattern '^OK' -Quiet)) { exit 1 }
+
+      - name: Auto-test de l'exécutable (Linux)
+        if: matrix.nom == 'Linux'
+        run: ./dist/DecoupeIsolant --autotest autotest.txt && cat autotest.txt
+
+      - name: Auto-test de l'exécutable (macOS)
+        if: matrix.nom == 'macOS'
+        run: dist/DecoupeIsolant.app/Contents/MacOS/DecoupeIsolant --autotest autotest.txt && cat autotest.txt
+
+      - name: Préparer l'archive
+        shell: bash
+        run: |
+          mkdir -p livraison
+          cp README.md livraison/LISEZMOI.md
+          if [ "${{ matrix.nom }}" = "Windows" ]; then cp dist/DecoupeIsolant.exe livraison/; fi
+          if [ "${{ matrix.nom }}" = "Linux" ]; then cp dist/DecoupeIsolant livraison/; fi
+          if [ "${{ matrix.nom }}" = "macOS" ]; then cp -R dist/DecoupeIsolant.app livraison/; fi
+          cd livraison && python -c "import shutil; shutil.make_archive('../DecoupeIsolant-${{ matrix.nom }}', 'zip', '.')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DecoupeIsolant-${{ matrix.nom }}
+          path: DecoupeIsolant-${{ matrix.nom }}.zip
+
+  publier:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: construire
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: archives
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: archives/*.zip
