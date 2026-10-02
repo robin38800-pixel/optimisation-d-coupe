@@ -4,16 +4,34 @@ Place automatiquement toutes les découpes d'un fichier **DXF** dans des plaques
 (1500 × 1000 mm par défaut) pour **minimiser le nombre de plaques et la chute**,
 et réécrit le résultat en **DXF**.
 
-## Installation
+## Application téléchargeable (sans installer Python)
+
+Chaque construction GitHub produit une archive par système (onglet **Actions** > dernière exécution
+« Construire l'application » > section *Artifacts*) :
+
+* `DecoupeIsolant-Windows.zip` : décompressez, double-cliquez sur **DecoupeIsolant.exe**.
+* `DecoupeIsolant-Linux.zip`, `DecoupeIsolant-macOS.zip` : même principe.
+
+Pour publier une version téléchargeable dans l'onglet **Releases** : créez un tag `v1.0.0` ; les
+archives y sont jointes automatiquement.
+
+L'application ouvre une fenêtre : 1) choisir le DXF (et le calque / les contours à garder),
+2) régler plaque, espacement, marge, rotations, durée, 3) *Calculer*, 4) *Enregistrer le DXF*.
+La première ouverture peut afficher un avertissement Windows SmartScreen (application non signée) :
+« Informations complémentaires » > « Exécuter quand même ». Le même programme accepte aussi toutes les
+options en ligne de commande (`DecoupeIsolant.exe fichier.dxf -o sortie.dxf ...`).
+
+## Installation (version Python)
 
 ```bash
 pip install -r requirements.txt        # ezdxf, shapely, numpy
 ```
 
-## Utilisation
+## Utilisation (ligne de commande)
 
 ```bash
 python -m decoupe pieces.dxf -o resultat.dxf --espacement 3 --temps 60
+python lancer.py                     # ouvre l'interface graphique (nécessite tkinter)
 ```
 
 | Option | Rôle | Défaut |
