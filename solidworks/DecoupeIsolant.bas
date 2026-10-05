@@ -876,10 +876,48 @@ Private Function CreerVue(ByVal swModel As Object, cle As String, chemin As Stri
     Next i
 End Function
 
+' Echelle 1:1 (sinon SolidWorks choisit une echelle automatique)
+Private Sub EchelleUnitaire(ByVal v As Object)
+    On Error Resume Next
+    v.ScaleDecimal = 1#
+    Err.Clear
+End Sub
+
+' Diagnostic : echelle et matrice brute de la transformation modele -> vue
+Private Function TexteTransform(ByVal v As Object) As String
+    Dim d As Variant, i As Long, s As String
+    On Error Resume Next
+    s = "echelle " & Format$(v.ScaleDecimal, "0.0000") & " ; matrice "
+    d = v.ModelToViewTransform.ArrayData
+    For i = LBound(d) To UBound(d)
+        s = s & Format$(CDbl(d(i)), "0.0000") & " "
+    Next i
+    TexteTransform = s
+End Function
+
+' Dimensions (mm) de la boite de la vue
+Private Function DimsVue(ByVal v As Object, ByRef w As Double, ByRef h As Double) As Boolean
+    Dim ol As Variant
+    On Error Resume Next
+    ol = v.GetOutline
+    If Err.Number <> 0 Then
+        Err.Clear
+        Exit Function
+    End If
+    w = (CDbl(ol(2)) - CDbl(ol(0))) * 1000#
+    h = (CDbl(ol(3)) - CDbl(ol(1))) * 1000#
+    DimsVue = True
+End Function
+
+Private Function DimsOk(ByVal w As Double, ByVal h As Double, ByVal wMm As Double, ByVal hMm As Double) As Boolean
+    DimsOk = (Abs(w - wMm) <= 2# + 0.02 * wMm) And (Abs(h - hMm) <= 2# + 0.02 * hMm)
+End Function
+
 '--------------------------------------------------------------------------
 ' Cree la vue du modele, la tourne de thetaDeg et centre sa boite sur (cxMm, cyMm)
-' Parmi les vues standard, on garde celle qui regarde la grande face de face
-' (mesure sur la transformation de la vue, quel que soit son nom).
+' 1) on cherche une vue standard dont la transformation mesuree regarde la face de face ;
+' 2) si la mesure est inexploitable, on prend la vue prevue et on controle les dimensions
+'    de sa boite (la boite d'une vue tournee de theta doit valoir celle de la piece posee).
 ' Renvoie False si la vue n'a pas pu etre creee correctement (la piece est alors tracee en traits).
 '--------------------------------------------------------------------------
 Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg As Double, _
@@ -890,6 +928,7 @@ Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg A
     Dim th As Double, a0 As Double, aV0 As Double, aN As Double, a1 As Double
     Dim lgU As Double, lgV As Double, lgN As Double
     Dim essais As Variant, e As Long, ol As Variant, pos As Variant, dx As Double, dy As Double
+    Dim w As Double, h As Double
 
     If infosPieces Is Nothing Then Exit Function
     If Not infosPieces.Exists(repere) Then
@@ -902,6 +941,7 @@ Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg A
     nx = uy * vz - uz * vy                  ' normale = u x v
     ny = uz * vx - ux * vz
     nz = ux * vy - uy * vx
+    th = thetaDeg * PI / 180#
 
     cles = Array(CStr(info(2)), "Face", "Arriere", "Dessus", "Dessous", "Gauche", "Droite")
     For k = LBound(cles) To UBound(cles)
@@ -911,6 +951,8 @@ Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg A
             If v Is Nothing Then
                 Journal "  repere " & repere & " : creation de la vue " & cle & " impossible"
             Else
+                EchelleUnitaire v
+                If k = 0 Then Journal "    vue " & cle & " : " & TexteTransform(v)
                 On Error Resume Next
                 a0 = AngleVecteur(v, ux, uy, uz, lgU)
                 aV0 = AngleVecteur(v, vx, vy, vz, lgV)
@@ -934,35 +976,60 @@ Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg A
             End If
         End If
     Next k
-    If Not ok Then
-        Journal "  repere " & repere & " : aucune vue standard ne regarde la face de face, trace en traits"
-        Exit Function
-    End If
-    Journal "  repere " & repere & " : vue " & cle & " retenue"
 
     On Error GoTo Echec
 
-    On Error Resume Next                    ' configuration de la piece (facultatif)
-    v.ReferencedConfiguration = CStr(info(1))
-    Err.Clear
-    On Error GoTo Echec
-
-    ' rotation : l'axe u de la piece doit finir a l'angle th (le sens et l'origine de v.Angle sont verifies)
-    th = thetaDeg * PI / 180#
-    If Abs(EcartAngle(th - a0)) > 0.0001 Then
-        essais = Array(EcartAngle(th - a0), -EcartAngle(th - a0), th, -th)
+    If ok Then
+        Journal "  repere " & repere & " : vue " & cle & " retenue (orientation mesuree)"
+        On Error Resume Next                ' configuration de la piece (facultatif)
+        v.ReferencedConfiguration = CStr(info(1))
+        Err.Clear
+        On Error GoTo Echec
+        ' rotation : l'axe u de la piece doit finir a l'angle th (le sens et l'origine de v.Angle sont verifies)
+        If Abs(EcartAngle(th - a0)) > 0.0001 Then
+            essais = Array(EcartAngle(th - a0), -EcartAngle(th - a0), th, -th)
+            For e = LBound(essais) To UBound(essais)
+                v.Angle = CDbl(essais(e))
+                a1 = AngleVecteur(v, ux, uy, uz, lgU)
+                If Abs(EcartAngle(a1 - th)) <= 0.02 Then Exit For
+            Next e
+            If Abs(EcartAngle(a1 - th)) > 0.02 Then
+                Journal "  repere " & repere & " : rotation non obtenue : vue supprimee, trace en traits"
+                SupprimerVue swModel, v
+                Exit Function
+            End If
+        End If
+    Else
+        ' mesure inexploitable : vue prevue, rotation de th, controle des dimensions de la boite
+        Journal "  repere " & repere & " : mesure inexploitable, controle par les dimensions de la boite"
+        Set v = CreerVue(swModel, CStr(info(2)), CStr(info(0)), cxMm, cyMm)
+        If v Is Nothing Then
+            Journal "  repere " & repere & " : creation de la vue impossible, trace en traits"
+            Exit Function
+        End If
+        EchelleUnitaire v
+        On Error Resume Next
+        v.ReferencedConfiguration = CStr(info(1))
+        Err.Clear
+        On Error GoTo Echec
+        essais = Array(th, -th)
         For e = LBound(essais) To UBound(essais)
             v.Angle = CDbl(essais(e))
-            a1 = AngleVecteur(v, ux, uy, uz, lgU)
-            If Abs(EcartAngle(a1 - th)) <= 0.02 Then Exit For
+            If DimsVue(v, w, h) Then
+                Journal "    angle " & Format$(CDbl(essais(e)), "0.000") & " rad : boite " & Format$(w, "0.0") & " x " & _
+                        Format$(h, "0.0") & " mm (attendu " & Format$(wMm, "0.0") & " x " & Format$(hMm, "0.0") & ")"
+                If DimsOk(w, h, wMm, hMm) Then
+                    ok = True
+                    Exit For
+                End If
+            End If
         Next e
-        If Abs(EcartAngle(a1 - th)) > 0.02 Then
-            Journal "  repere " & repere & " : rotation non obtenue (angle " & Format$(a1, "0.000") & " au lieu de " & _
-                    Format$(th, "0.000") & ") : vue supprimee, trace en traits"
+        If Not ok Then
+            Journal "  repere " & repere & " : dimensions de la vue differentes de la piece : vue supprimee, trace en traits"
             SupprimerVue swModel, v
             Exit Function
         End If
-        Journal "  repere " & repere & " : rotation " & Format$(CDbl(essais(e)), "0.000") & " rad appliquee"
+        Journal "  repere " & repere & " : vue gardee (orientation controlee par les dimensions seulement)"
     End If
 
     ' centrage : la boite de la vue doit etre centree sur celle de la piece posee
