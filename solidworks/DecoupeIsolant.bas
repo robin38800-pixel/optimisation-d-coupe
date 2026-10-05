@@ -145,8 +145,9 @@ Private Function EcrireEchange(swModel As Object, chemin As String, epaisseur As
     f = FreeFile
     Open chemin For Output As #f
     Print #f, "DECOUPE-ECHANGE 1"
+    JournalAssemblage swModel
     For t = 1 To tables.Count
-        total = total + LireTable(f, tables(t), CStr(configs(t)), epaisseur)
+        total = total + LireTable(f, tables(t), ConfigsCandidates(swModel, CStr(configs(t))), epaisseur)
     Next t
     Print #f, "FIN"
     Close #f
@@ -182,35 +183,60 @@ Private Sub ChercherNomenclatures(premier As Object, tables As Collection, confi
     Loop
 End Sub
 
-Private Function LireTable(f As Integer, tbl As Object, cfg As String, epaisseur As Double) As Long
+Private Function LireTable(f As Integer, tbl As Object, cfgs As Collection, epaisseur As Double) As Long
     Dim r As Long, c As Long, nbLignes As Long, nbCol As Long, colQte As Long
-    Dim repere As String, refPiece As String, texte As String
+    Dim repere As String, refPiece As String, texte As String, ligneTxt As String
     Dim nbComp As Long, qte As Long, comps As Variant, comp As Object
-    Dim n As Long
+    Dim n As Long, k As Long, cfgOk As String, trouve As Boolean, essais As String
 
     nbLignes = tbl.RowCount
     nbCol = tbl.ColumnCount
-    Journal "Table : " & nbLignes & " lignes, " & nbCol & " colonnes, configuration '" & cfg & "'"
+    Journal "Table : " & nbLignes & " lignes, " & nbCol & " colonnes"
+
+    ' contenu complet du tableau (diagnostic)
+    For r = 0 To nbLignes - 1
+        ligneTxt = ""
+        For c = 0 To nbCol - 1
+            ligneTxt = ligneTxt & Replace(tbl.Text(r, c), vbCrLf, " ") & " | "
+        Next c
+        Journal "  [" & r & "] " & ligneTxt
+    Next r
 
     ' colonne "quantite" : repere dans la premiere ligne (en-tete)
     colQte = -1
     For c = 0 To nbCol - 1
         texte = UCase$(tbl.Text(0, c))
-        Journal "  en-tete col " & c & " : " & texte
         If InStr(texte, "QT") > 0 Or InStr(texte, "QUANT") > 0 Then colQte = c
     Next c
     Journal "  colonne quantite : " & colQte
 
+    cfgOk = ""
+    trouve = False
     For r = 0 To nbLignes - 1
         repere = "": refPiece = "": nbComp = 0
-        On Error Resume Next
-        nbComp = tbl.GetComponentsCount2(r, cfg, repere, refPiece)
-        If Err.Number <> 0 Then
-            Journal "  ligne " & r & " : GetComponentsCount2 a echoue (" & Err.Description & ")"
-            Err.Clear
-            nbComp = 0
-        End If
-        On Error GoTo 0
+        essais = ""
+
+        ' configuration deja validee, sinon on essaie toutes les candidates
+        For k = 1 To cfgs.Count
+            Dim cfg As String
+            If trouve Then cfg = cfgOk Else cfg = CStr(cfgs(k))
+            repere = "": refPiece = "": nbComp = 0
+            On Error Resume Next
+            nbComp = tbl.GetComponentsCount2(r, cfg, repere, refPiece)
+            If Err.Number <> 0 Then
+                essais = essais & " ['" & cfg & "' -> erreur " & Err.Description & "]"
+                Err.Clear
+                nbComp = 0
+            Else
+                essais = essais & " ['" & cfg & "' -> " & nbComp & "]"
+            End If
+            On Error GoTo 0
+            If nbComp > 0 Then
+                trouve = True
+                cfgOk = cfg
+            End If
+            If trouve Then Exit For
+        Next k
 
         If nbComp > 0 Then
             qte = nbComp
@@ -220,11 +246,14 @@ Private Function LireTable(f As Integer, tbl As Object, cfg As String, epaisseur
                     If CLng(Val(texte)) > 0 Then qte = CLng(Val(texte))
                 End If
             End If
-            Journal "  ligne " & r & " : repere '" & repere & "', piece '" & refPiece & "', quantite " & qte & " (composants " & nbComp & ")"
+            Journal "  ligne " & r & " : repere '" & repere & "', piece '" & refPiece & "', quantite " & qte & _
+                    " (composants " & nbComp & ", config '" & cfgOk & "')"
 
             comps = Empty
             On Error Resume Next
-            comps = tbl.GetComponents2(r, cfg)
+            comps = tbl.GetComponents2(r, cfgOk)
+            If Err.Number <> 0 Then Journal "    GetComponents2 : " & Err.Description
+            Err.Clear
             On Error GoTo 0
             If IsArray(comps) Then
                 Set comp = comps(LBound(comps))
@@ -232,10 +261,79 @@ Private Function LireTable(f As Integer, tbl As Object, cfg As String, epaisseur
             Else
                 Journal "    composants illisibles pour cette ligne"
             End If
+        ElseIf r > 0 Then
+            Journal "  ligne " & r & " : aucun composant (essais :" & essais & ")"
         End If
     Next r
     LireTable = n
 End Function
+
+' Configurations a essayer : celle de la nomenclature, puis celles des vues du plan
+Private Function ConfigsCandidates(swModel As Object, cfgBom As String) As Collection
+    Dim col As Collection, v As Object, nom As String, i As Long
+    Set col = New Collection
+    AjouterUnique col, cfgBom
+    On Error Resume Next
+    Set v = swModel.GetFirstView
+    Do While Not v Is Nothing And i < 500
+        i = i + 1
+        nom = ""
+        nom = v.ReferencedConfiguration
+        If Err.Number <> 0 Then Err.Clear
+        If nom <> "" Then AjouterUnique col, nom
+        Set v = v.GetNextView
+        If Err.Number <> 0 Then
+            Err.Clear
+            Exit Do
+        End If
+    Loop
+    On Error GoTo 0
+    AjouterUnique col, ""
+    Dim s As String
+    For i = 1 To col.Count
+        s = s & " '" & col(i) & "'"
+    Next i
+    Journal "  configurations candidates :" & s
+    Set ConfigsCandidates = col
+End Function
+
+Private Sub AjouterUnique(col As Collection, s As String)
+    On Error Resume Next
+    col.Add s, "k_" & s
+    Err.Clear
+End Sub
+
+' Diagnostic : composants de l'assemblage reference par les vues du plan
+Private Sub JournalAssemblage(swModel As Object)
+    Dim v As Object, doc As Object, comps As Variant, i As Long, nb As Long, vues As Long
+    On Error Resume Next
+    Set v = swModel.GetFirstView
+    Do While Not v Is Nothing And vues < 500
+        vues = vues + 1
+        Set doc = Nothing
+        Set doc = v.ReferencedDocument
+        If Err.Number <> 0 Then Err.Clear
+        If Not doc Is Nothing Then
+            If doc.GetType = swDocASSEMBLY Then
+                Journal "Assemblage reference par la vue '" & v.GetName2 & "' : " & doc.GetPathName
+                comps = doc.GetComponents(True)
+                If IsArray(comps) Then
+                    For i = LBound(comps) To UBound(comps)
+                        nb = nb + 1
+                        If nb <= 60 Then Journal "    composant : " & comps(i).Name2 & " | " & comps(i).GetPathName & " | config " & comps(i).ReferencedConfiguration
+                    Next i
+                End If
+                Exit Do
+            End If
+        End If
+        Set v = v.GetNextView
+        If Err.Number <> 0 Then
+            Err.Clear
+            Exit Do
+        End If
+    Loop
+    If nb = 0 Then Journal "Aucun assemblage reference par les vues du plan"
+End Sub
 
 '--------------------------------------------------------------------------
 ' Contour de la plus grande face plane d'une piece
