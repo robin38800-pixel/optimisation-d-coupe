@@ -2,7 +2,9 @@
 
 Depuis une **mise en plan avec nomenclature**, la macro :
 
-1. lit la nomenclature (repère et **quantité** de chaque pièce) ;
+1. lit la nomenclature (repère et **quantité** de chaque pièce). Si le tableau n'est pas relié à un assemblage, la pièce de
+   chaque ligne est retrouvée **d'après sa désignation** (par exemple « N° PLAN : CALORIFUGE ECF A1-A » → fichier
+   contenant ce nom), d'abord parmi les modèles des vues du plan, puis dans le dossier du plan ;
 2. relève le contour de la **plus grande face plane** de chaque pièce 3D (vraie grandeur, pas de problème d'échelle de vue) ;
 3. appelle `DecoupeIsolant.exe`, qui répartit toutes les pièces dans des plaques de 1500 x 1000 mm ;
 4. crée une **nouvelle feuille « Plaques hhmmss »** (échelle 1:1) dans la mise en plan avec les plaques et, pour chaque

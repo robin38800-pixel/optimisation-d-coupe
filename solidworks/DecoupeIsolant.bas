@@ -37,6 +37,7 @@ Const TITRE As String = "Decoupe isolant"
 
 Dim swApp As Object
 Dim cheminJournal As String
+Dim swDessin As Object                 ' mise en plan active
 Dim infosPieces As Object              ' repere -> (chemin, configuration, vue, axe u, axe v)
 
 '==========================================================================
@@ -62,6 +63,7 @@ Sub main()
         Exit Sub
     End If
 
+    Set swDessin = swModel
     dossier = Environ("TEMP") & "\DecoupeIsolant"
     If Dir(dossier, vbDirectory) = "" Then MkDir dossier
     OuvrirJournal dossier & "\journal.txt"
@@ -192,6 +194,7 @@ Private Function LireTable(f As Integer, ByVal tbl As Object, cfgs As Collection
     Dim repere As String, refPiece As String, texte As String, ligneTxt As String
     Dim nbComp As Long, qte As Long, comps As Variant, comp As Object
     Dim n As Long, k As Long, cfgOk As String, trouve As Boolean, essais As String
+    Dim colDes As Long, desig As String, chemin As String, cfgVue As String, repTxt As String
 
     nbLignes = tbl.RowCount
     nbCol = tbl.ColumnCount
@@ -208,11 +211,13 @@ Private Function LireTable(f As Integer, ByVal tbl As Object, cfgs As Collection
 
     ' colonne "quantite" : repere dans la premiere ligne (en-tete)
     colQte = -1
+    colDes = -1
     For c = 0 To nbCol - 1
         texte = UCase$(tbl.Text(0, c))
         If InStr(texte, "QT") > 0 Or InStr(texte, "QUANT") > 0 Then colQte = c
+        If InStr(texte, "DESIGN") > 0 Then colDes = c
     Next c
-    Journal "  colonne quantite : " & colQte
+    Journal "  colonne quantite : " & colQte & ", colonne designation : " & colDes
 
     cfgOk = ""
     trouve = False
@@ -266,7 +271,31 @@ Private Function LireTable(f As Integer, ByVal tbl As Object, cfgs As Collection
                 Journal "    composants illisibles pour cette ligne"
             End If
         ElseIf r > 0 Then
-            Journal "  ligne " & r & " : aucun composant (essais :" & essais & ")"
+            Journal "  ligne " & r & " : aucun composant par l'API (essais :" & essais & ")"
+            ' repli : retrouver la piece d'apres le texte de la ligne
+            repTxt = Trim$(tbl.Text(r, 0))
+            desig = ""
+            If colDes >= 0 Then
+                desig = tbl.Text(r, colDes)
+            Else
+                For c = 0 To nbCol - 1
+                    desig = desig & " " & tbl.Text(r, c)
+                Next c
+            End If
+            qte = 1
+            If colQte >= 0 Then
+                texte = Trim$(tbl.Text(r, colQte))
+                If IsNumeric(texte) Then
+                    If CLng(Val(texte)) > 0 Then qte = CLng(Val(texte))
+                End If
+            End If
+            chemin = CheminPourLigne(desig, cfgVue)
+            If chemin <> "" Then
+                Journal "    piece retrouvee par son nom : " & chemin & " (configuration '" & cfgVue & "'), repere '" & repTxt & "', quantite " & qte
+                If EcrirePieceParChemin(f, chemin, cfgVue, repTxt, desig, qte, epaisseur) Then n = n + 1
+            Else
+                Journal "    aucune piece trouvee pour '" & Trim$(desig) & "'"
+            End If
         End If
     Next r
     LireTable = n
@@ -307,36 +336,26 @@ Private Sub AjouterUnique(col As Collection, s As String)
     Err.Clear
 End Sub
 
-' Diagnostic : composants de l'assemblage reference par les vues du plan
+' Diagnostic : toutes les vues du plan et le modele qu'elles referencent
 Private Sub JournalAssemblage(ByVal swModel As Object)
-    Dim v As Object, doc As Object, comps As Variant, i As Long, nb As Long, vues As Long
+    Dim v As Object, i As Long, nom As String, chemin As String, cfg As String
     On Error Resume Next
     Set v = swModel.GetFirstView
-    Do While Not v Is Nothing And vues < 500
-        vues = vues + 1
-        Set doc = Nothing
-        Set doc = v.ReferencedDocument
-        If Err.Number <> 0 Then Err.Clear
-        If Not doc Is Nothing Then
-            If doc.GetType = swDocASSEMBLY Then
-                Journal "Assemblage reference par la vue '" & v.GetName2 & "' : " & doc.GetPathName
-                comps = doc.GetComponents(True)
-                If IsArray(comps) Then
-                    For i = LBound(comps) To UBound(comps)
-                        nb = nb + 1
-                        If nb <= 60 Then Journal "    composant : " & comps(i).Name2 & " | " & comps(i).GetPathName & " | config " & comps(i).ReferencedConfiguration
-                    Next i
-                End If
-                Exit Do
-            End If
-        End If
+    Do While Not v Is Nothing And i < 500
+        i = i + 1
+        nom = "": chemin = "": cfg = ""
+        nom = v.GetName2
+        chemin = v.GetReferencedModelName
+        cfg = v.ReferencedConfiguration
+        Err.Clear
+        Journal "Vue " & i & " : '" & nom & "' -> " & chemin & " [config '" & cfg & "']"
         Set v = v.GetNextView
         If Err.Number <> 0 Then
             Err.Clear
             Exit Do
         End If
     Loop
-    If nb = 0 Then Journal "Aucun assemblage reference par les vues du plan"
+    If i = 0 Then Journal "Aucune vue lue dans le plan"
 End Sub
 
 '--------------------------------------------------------------------------
@@ -344,14 +363,9 @@ End Sub
 '--------------------------------------------------------------------------
 Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As String, refPiece As String, _
                              qte As Long, epaisseur As Double) As Boolean
-    Dim modele As Object, chemin As String, nom As String
-    Dim face As Object, aire As Double, normale As Variant
-    Dim lp As Object, loops As Variant, aretes As Variant
-    Dim i As Long, k As Long, nbAretes As Long
-    Dim ep As Double, ligne As String
+    Dim modele As Object, chemin As String, cfgComp As String
 
     On Error GoTo Echec
-
     chemin = ""
     chemin = comp.GetPathName
     If LCase$(Right$(chemin, 7)) = ".sldasm" Then
@@ -360,14 +374,62 @@ Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As Strin
     End If
 
     Set modele = comp.GetModelDoc2
-    If modele Is Nothing Then
-        Dim e As Long, w As Long
-        Set modele = swApp.OpenDoc6(chemin, swDocPART, swOpenDocOptions_Silent, "", e, w)
-    End If
+    If modele Is Nothing Then Set modele = ModeleParChemin(chemin)
     If modele Is Nothing Then
         Journal "    modele introuvable : " & chemin
         Exit Function
     End If
+
+    cfgComp = ""
+    On Error Resume Next
+    cfgComp = comp.ReferencedConfiguration
+    On Error GoTo Echec
+    EcrirePiece = EcrireModele(f, modele, chemin, cfgComp, repere, refPiece, qte, epaisseur)
+    Exit Function
+
+Echec:
+    Journal "    ERREUR sur la piece '" & refPiece & "' : " & Err.Description
+End Function
+
+' Meme chose a partir du chemin d'un fichier de piece (quand la nomenclature ne donne pas les composants)
+Private Function EcrirePieceParChemin(f As Integer, chemin As String, cfg As String, repere As String, _
+                                      nom As String, qte As Long, epaisseur As Double) As Boolean
+    Dim modele As Object
+    On Error GoTo Echec
+    Set modele = ModeleParChemin(chemin)
+    If modele Is Nothing Then
+        Journal "    modele impossible a ouvrir : " & chemin
+        Exit Function
+    End If
+    EcrirePieceParChemin = EcrireModele(f, modele, chemin, cfg, repere, nom, qte, epaisseur)
+    Exit Function
+
+Echec:
+    Journal "    ERREUR sur la piece '" & nom & "' : " & Err.Description
+End Function
+
+Private Function ModeleParChemin(chemin As String) As Object
+    Dim m As Object, e As Long, w As Long
+    Set m = Nothing
+    On Error Resume Next
+    Set m = swApp.GetOpenDocumentByName(chemin)
+    Err.Clear
+    On Error GoTo 0
+    If m Is Nothing Then Set m = swApp.OpenDoc6(chemin, swDocPART, swOpenDocOptions_Silent, "", e, w)
+    Set ModeleParChemin = m
+End Function
+
+' Ecrit le contour de la plus grande face plane d'un modele de piece
+Private Function EcrireModele(f As Integer, ByVal modele As Object, chemin As String, cfgComp As String, _
+                              repere As String, refPiece As String, qte As Long, epaisseur As Double) As Boolean
+    Dim nom As String
+    Dim face As Object, aire As Double, normale As Variant
+    Dim lp As Object, loops As Variant, aretes As Variant
+    Dim i As Long, k As Long, nbAretes As Long
+    Dim ep As Double, ligne As String
+    Dim cleVue As String, axesVue As Variant
+
+    On Error GoTo Echec
     If modele.GetType <> swDocPART Then
         Journal "    ce n'est pas une piece : " & chemin
         Exit Function
@@ -403,7 +465,6 @@ Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As Strin
         Exit Function
     End If
 
-    Dim cleVue As String, axesVue As Variant, cfgComp As String
     cleVue = ChoisirVue(normale, axesVue)
     Print #f, "PIECE|" & Nettoyer(repere) & "|" & qte & "|" & Nettoyer(nom)
     Print #f, "NORMALE " & Num6(normale(0)) & " " & Num6(normale(1)) & " " & Num6(normale(2))
@@ -411,10 +472,6 @@ Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As Strin
         Print #f, "VUE " & cleVue
         Print #f, "BASE " & Num6(axesVue(0)) & " " & Num6(axesVue(1)) & " " & Num6(axesVue(2)) & " " & _
                             Num6(axesVue(3)) & " " & Num6(axesVue(4)) & " " & Num6(axesVue(5))
-        cfgComp = ""
-        On Error Resume Next
-        cfgComp = comp.ReferencedConfiguration
-        On Error GoTo Echec
         infosPieces(repere) = Array(chemin, cfgComp, cleVue, axesVue(0), axesVue(1), axesVue(2), axesVue(3), axesVue(4), axesVue(5))
         Journal "    vue standard : " & cleVue & " (configuration '" & cfgComp & "')"
     Else
@@ -428,11 +485,69 @@ Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As Strin
         End If
     Next k
     Journal "    " & nbAretes & " aretes ecrites"
-    EcrirePiece = (nbAretes >= 3)
+    EcrireModele = (nbAretes >= 3)
     Exit Function
 
 Echec:
     Journal "    ERREUR sur la piece '" & refPiece & "' : " & Err.Description
+End Function
+
+'--------------------------------------------------------------------------
+' Retrouve le fichier d'une piece d'apres le texte de la nomenclature
+' (par exemple "N PLAN:CALORIFUGE ECF A1-A") : d'abord parmi les modeles
+' references par les vues du plan, puis dans le dossier du plan.
+'--------------------------------------------------------------------------
+Private Function Normaliser(s As String) As String
+    Dim r As String
+    r = UCase$(s)
+    r = Replace(r, " ", "")
+    r = Replace(r, "_", "")
+    r = Replace(r, "-", "")
+    Normaliser = r
+End Function
+
+Private Function CheminPourLigne(designation As String, ByRef cfg As String) As String
+    Dim cle As String, v As Object, chemin As String, nomFic As String
+    Dim i As Long, dossier As String, trouve As String, chemDessin As String
+
+    cle = designation
+    If InStr(cle, ":") > 0 Then cle = Mid$(cle, InStr(cle, ":") + 1)
+    cle = Trim$(cle)
+    If cle = "" Then Exit Function
+    cfg = ""
+
+    ' 1) modeles references par les vues du plan
+    On Error Resume Next
+    Set v = swDessin.GetFirstView
+    Do While Not v Is Nothing And i < 500
+        i = i + 1
+        chemin = ""
+        chemin = v.GetReferencedModelName
+        If Err.Number <> 0 Then Err.Clear
+        If chemin <> "" Then
+            nomFic = Mid$(chemin, InStrRev(chemin, "\") + 1)
+            If InStr(Normaliser(nomFic), Normaliser(cle)) > 0 Then
+                cfg = v.ReferencedConfiguration
+                If Err.Number <> 0 Then Err.Clear
+                CheminPourLigne = chemin
+                Exit Function
+            End If
+        End If
+        Set v = v.GetNextView
+        If Err.Number <> 0 Then
+            Err.Clear
+            Exit Do
+        End If
+    Loop
+
+    ' 2) fichiers du dossier du plan
+    chemDessin = swDessin.GetPathName
+    On Error GoTo 0
+    If chemDessin <> "" Then
+        dossier = Left$(chemDessin, InStrRev(chemDessin, "\"))
+        trouve = Dir(dossier & "*" & cle & "*.SLDPRT")
+        If trouve <> "" Then CheminPourLigne = dossier & trouve
+    End If
 End Function
 
 Private Function GrandeFacePlane(ByVal modele As Object, ByRef aireMax As Double, ByRef normale As Variant) As Object
