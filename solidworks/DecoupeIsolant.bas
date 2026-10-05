@@ -575,6 +575,7 @@ Private Sub DessinerResultat(ByVal swModel As Object, fResultat As String, fDxf 
 
     sm.AddToDB = False
     sm.InsertSketch True
+    swModel.ClearSelection2 True
 
     Dim tx As Variant
     For Each tx In textes
@@ -603,6 +604,8 @@ End Sub
 Private Sub PoserTexte(ByVal swModel As Object, texte As String, x As Double, y As Double)
     Dim note As Object, ann As Object, tf As Object
     On Error GoTo Echec
+    ' sans selection, la note ne s'accroche a rien (pas de ligne de repere)
+    swModel.ClearSelection2 True
     Set note = swModel.InsertNote(texte)
     Set ann = note.GetAnnotation
     ann.SetPosition2 x / 1000#, y / 1000#, 0#
