@@ -1,4 +1,4 @@
-Attribute VB_Name = "DecoupeIsolant"
+Attribute VB_Name = "ModDecoupe"
 Option Explicit
 
 '==========================================================================
