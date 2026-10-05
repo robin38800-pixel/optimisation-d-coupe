@@ -13,8 +13,9 @@ Depuis une **mise en plan avec nomenclature**, la macro :
 
 ## Installation (une seule fois)
 
-1. Copiez `DecoupeIsolant.exe` (archive Windows) dans `C:\DecoupeIsolant\`.
-2. Dans SolidWorks : **Outils > Macro > Nouvelle...**, enregistrez sous `C:\DecoupeIsolant\DecoupeIsolant.swp`.
+1. Copiez `DecoupeIsolant.exe` (archive Windows) où vous voulez, **idéalement dans le même dossier que le fichier `.swp`**
+   de la macro (elle l'y retrouve toute seule). Sinon elle vous demandera son chemin au premier lancement.
+2. Dans SolidWorks : **Outils > Macro > Nouvelle...**, enregistrez sous le nom `DecoupeIsolant.swp` (dans le même dossier que l'exe).
    L'éditeur VBA s'ouvre avec un module vide (`Module1`).
 3. Dans l'éditeur, à gauche, déroulez **Modules** : il contient un module vide (`DecoupeIsolant1` ou `Module1`).
    Clic droit sur **ce module** (pas sur le dossier « Modules », qui est grisé) > **Supprimer ...** (répondre *Non*
@@ -27,7 +28,7 @@ Depuis une **mise en plan avec nomenclature**, la macro :
 
 1. Ouvrez la mise en plan qui contient la nomenclature des isolants.
 2. **Outils > Macro > Exécuter...** > `DecoupeIsolant.swp` > module `ModDecoupe` > `main`.
-3. Premier lancement : indiquez le chemin de `DecoupeIsolant.exe` (il est mémorisé).
+3. Si l'exe n'est pas à côté du `.swp`, indiquez son chemin complet (il est mémorisé).
 4. Répondez aux deux questions :
    * **Espacement** entre pièces (mm) ;
    * **Épaisseur des isolants** (mm) : permet d'ignorer les autres lignes de la nomenclature (visserie, cadres...).

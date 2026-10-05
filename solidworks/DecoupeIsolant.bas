@@ -522,17 +522,42 @@ End Sub
 ' Utilitaires
 '==========================================================================
 Private Function TrouverExe() As String
-    Dim p As String
+    Dim p As String, dossierMacro As String
+
+    ' 1) chemin memorise lors d'un precedent lancement
     p = GetSetting("DecoupeIsolant", "Config", "Exe", "")
-    If p = "" Or Dir(p) = "" Then
-        p = InputBox("Chemin complet de DecoupeIsolant.exe :", TITRE, "C:\DecoupeIsolant\DecoupeIsolant.exe")
+    If p <> "" Then
+        If Dir(p) = "" Then p = ""
+    End If
+
+    ' 2) a cote du fichier .swp de la macro
+    If p = "" Then
+        dossierMacro = ""
+        On Error Resume Next
+        dossierMacro = swApp.GetCurrentMacroPathName
+        On Error GoTo 0
+        If dossierMacro <> "" Then
+            dossierMacro = Left$(dossierMacro, InStrRev(dossierMacro, "\"))
+            If Dir(dossierMacro & "DecoupeIsolant.exe") <> "" Then p = dossierMacro & "DecoupeIsolant.exe"
+        End If
+    End If
+
+    ' 3) demande a l'utilisateur
+    If p = "" Then
+        p = InputBox("DecoupeIsolant.exe est introuvable." & vbCrLf & _
+                     "Saisissez son chemin complet (vous pouvez le coller avec ses guillemets) :", TITRE, _
+                     "C:\DecoupeIsolant\DecoupeIsolant.exe")
+        p = Trim$(Replace(p, """", ""))
         If p = "" Then Exit Function
         If Dir(p) = "" Then
-            MsgBox "Fichier introuvable : " & p, vbCritical, TITRE
+            MsgBox "Fichier introuvable : " & p & vbCrLf & vbCrLf & _
+                   "Astuce : dans l'Explorateur, clic droit sur le fichier > Copier en tant que chemin d'acces.", vbCritical, TITRE
             Exit Function
         End If
-        SaveSetting "DecoupeIsolant", "Config", "Exe", p
     End If
+
+    SaveSetting "DecoupeIsolant", "Config", "Exe", p
+    Journal "Programme de calcul : " & p
     TrouverExe = p
 End Function
 
