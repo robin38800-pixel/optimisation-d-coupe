@@ -129,7 +129,7 @@ End Sub
 '==========================================================================
 ' Etape 1 : nomenclature -> fichier d'echange
 '==========================================================================
-Private Function EcrireEchange(swModel As Object, chemin As String, epaisseur As Double) As Long
+Private Function EcrireEchange(ByVal swModel As Object, chemin As String, epaisseur As Double) As Long
     Dim tables As Collection, configs As Collection
     Dim f As Integer, t As Long, total As Long
     Set tables = New Collection
@@ -154,7 +154,7 @@ Private Function EcrireEchange(swModel As Object, chemin As String, epaisseur As
     EcrireEchange = total
 End Function
 
-Private Sub ChercherNomenclatures(premier As Object, tables As Collection, configs As Collection)
+Private Sub ChercherNomenclatures(ByVal premier As Object, tables As Collection, configs As Collection)
     Dim feat As Object, fils As Object, spec As Object
     Dim v As Variant, i As Long, cfg As String
     Set feat = premier
@@ -183,7 +183,7 @@ Private Sub ChercherNomenclatures(premier As Object, tables As Collection, confi
     Loop
 End Sub
 
-Private Function LireTable(f As Integer, tbl As Object, cfgs As Collection, epaisseur As Double) As Long
+Private Function LireTable(f As Integer, ByVal tbl As Object, cfgs As Collection, epaisseur As Double) As Long
     Dim r As Long, c As Long, nbLignes As Long, nbCol As Long, colQte As Long
     Dim repere As String, refPiece As String, texte As String, ligneTxt As String
     Dim nbComp As Long, qte As Long, comps As Variant, comp As Object
@@ -269,7 +269,7 @@ Private Function LireTable(f As Integer, tbl As Object, cfgs As Collection, epai
 End Function
 
 ' Configurations a essayer : celle de la nomenclature, puis celles des vues du plan
-Private Function ConfigsCandidates(swModel As Object, cfgBom As String) As Collection
+Private Function ConfigsCandidates(ByVal swModel As Object, cfgBom As String) As Collection
     Dim col As Collection, v As Object, nom As String, i As Long
     Set col = New Collection
     AjouterUnique col, cfgBom
@@ -304,7 +304,7 @@ Private Sub AjouterUnique(col As Collection, s As String)
 End Sub
 
 ' Diagnostic : composants de l'assemblage reference par les vues du plan
-Private Sub JournalAssemblage(swModel As Object)
+Private Sub JournalAssemblage(ByVal swModel As Object)
     Dim v As Object, doc As Object, comps As Variant, i As Long, nb As Long, vues As Long
     On Error Resume Next
     Set v = swModel.GetFirstView
@@ -338,7 +338,7 @@ End Sub
 '--------------------------------------------------------------------------
 ' Contour de la plus grande face plane d'une piece
 '--------------------------------------------------------------------------
-Private Function EcrirePiece(f As Integer, comp As Object, repere As String, refPiece As String, _
+Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As String, refPiece As String, _
                              qte As Long, epaisseur As Double) As Boolean
     Dim modele As Object, chemin As String, nom As String
     Dim face As Object, aire As Double, normale As Variant
@@ -416,7 +416,7 @@ Echec:
     Journal "    ERREUR sur la piece '" & refPiece & "' : " & Err.Description
 End Function
 
-Private Function GrandeFacePlane(modele As Object, ByRef aireMax As Double, ByRef normale As Variant) As Object
+Private Function GrandeFacePlane(ByVal modele As Object, ByRef aireMax As Double, ByRef normale As Variant) As Object
     Dim corps As Variant, faces As Variant, i As Long, j As Long
     Dim b As Object, fc As Object, a As Double, meilleure As Object
 
@@ -443,7 +443,7 @@ Private Function GrandeFacePlane(modele As Object, ByRef aireMax As Double, ByRe
 End Function
 
 ' Epaisseur = volume / aire de la grande face (en mm) ; 0 si inconnue
-Private Function Epaisseur_mm(modele As Object, aireFace As Double) As Double
+Private Function Epaisseur_mm(ByVal modele As Object, aireFace As Double) As Double
     Dim mp As Object, vol As Double
     On Error Resume Next
     Set mp = modele.Extension.CreateMassProperty
@@ -453,7 +453,7 @@ Private Function Epaisseur_mm(modele As Object, aireFace As Double) As Double
 End Function
 
 ' Points d'une arete (mm), "x y z x y z ..."
-Private Function PointsArete(arete As Object) As String
+Private Function PointsArete(ByVal arete As Object) As String
     Dim crv As Object, v1 As Object, v2 As Object
     Dim p1 As Variant, p2 As Variant, prm As Variant, p As Variant
     Dim t0 As Double, t1 As Double, i As Long, s As String
@@ -495,7 +495,7 @@ End Function
 '==========================================================================
 ' Etape 3 : resultat -> nouvelle feuille de mise en plan
 '==========================================================================
-Private Sub DessinerResultat(swModel As Object, fResultat As String, fDxf As String)
+Private Sub DessinerResultat(ByVal swModel As Object, fResultat As String, fDxf As String)
     Dim lignes As Collection, l As String, f As Integer
     Dim nbPlaques As Long, larg As Double, haut As Double
     Dim t() As String
@@ -565,7 +565,7 @@ Private Sub DessinerResultat(swModel As Object, fResultat As String, fDxf As Str
             For k = 0 To n - 1
                 x1 = Val(coord(1 + 2 * k)): y1 = Val(coord(2 + 2 * k))
                 x2 = Val(coord(1 + 2 * ((k + 1) Mod n))): y2 = Val(coord(2 + 2 * ((k + 1) Mod n)))
-                Ligne sm, ox + x1, oy + y1, ox + x2, oy + y2
+                TracerSegment sm, ox + x1, oy + y1, ox + x2, oy + y2
                 cx = cx + x1: cy = cy + y1
             Next k
             textes.Add Array(rep(1), ox + cx / n, oy + cy / n)
@@ -588,19 +588,19 @@ Private Sub DessinerResultat(swModel As Object, fResultat As String, fDxf As Str
 End Sub
 
 ' Trace un segment (coordonnees en mm, repere de la feuille)
-Private Sub Ligne(sm As Object, x1 As Double, y1 As Double, x2 As Double, y2 As Double)
+Private Sub TracerSegment(ByVal sm As Object, x1 As Double, y1 As Double, x2 As Double, y2 As Double)
     Dim seg As Object
     Set seg = sm.CreateLine(x1 / 1000#, y1 / 1000#, 0#, x2 / 1000#, y2 / 1000#, 0#)
 End Sub
 
-Private Sub DessinerRectangle(sm As Object, x1 As Double, y1 As Double, x2 As Double, y2 As Double)
-    Ligne sm, x1, y1, x2, y1
-    Ligne sm, x2, y1, x2, y2
-    Ligne sm, x2, y2, x1, y2
-    Ligne sm, x1, y2, x1, y1
+Private Sub DessinerRectangle(ByVal sm As Object, x1 As Double, y1 As Double, x2 As Double, y2 As Double)
+    TracerSegment sm, x1, y1, x2, y1
+    TracerSegment sm, x2, y1, x2, y2
+    TracerSegment sm, x2, y2, x1, y2
+    TracerSegment sm, x1, y2, x1, y1
 End Sub
 
-Private Sub PoserTexte(swModel As Object, texte As String, x As Double, y As Double)
+Private Sub PoserTexte(ByVal swModel As Object, texte As String, x As Double, y As Double)
     Dim note As Object, ann As Object, tf As Object
     On Error GoTo Echec
     Set note = swModel.InsertNote(texte)
