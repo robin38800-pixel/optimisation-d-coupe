@@ -22,6 +22,8 @@ Const TEMPS_CALCUL As Long = 30         ' secondes de recherche
 Const ECART_PLAQUES As Double = 100     ' mm entre deux plaques sur la feuille
 Const HAUTEUR_TEXTE As Double = 25      ' mm : hauteur des numeros de pieces
 Const NB_POINTS_COURBE As Long = 24     ' points par arete courbe (arcs, cercles)
+Const MODE_VUES As Boolean = True       ' True : vraies vues des pieces ; False : simples traits (esquisse)
+Const PI As Double = 3.14159265358979
 
 ' --------------------- Constantes SolidWorks (liaison tardive) ----------
 Const swDocPART As Long = 1
@@ -35,6 +37,7 @@ Const TITRE As String = "Decoupe isolant"
 
 Dim swApp As Object
 Dim cheminJournal As String
+Dim infosPieces As Object              ' repere -> (chemin, configuration, vue, axe u, axe v)
 
 '==========================================================================
 ' Programme principal
@@ -142,6 +145,7 @@ Private Function EcrireEchange(ByVal swModel As Object, chemin As String, epaiss
         Exit Function
     End If
 
+    Set infosPieces = CreateObject("Scripting.Dictionary")
     f = FreeFile
     Open chemin For Output As #f
     Print #f, "DECOUPE-ECHANGE 1"
@@ -399,8 +403,23 @@ Private Function EcrirePiece(f As Integer, ByVal comp As Object, repere As Strin
         Exit Function
     End If
 
+    Dim cleVue As String, axesVue As Variant, cfgComp As String
+    cleVue = ChoisirVue(normale, axesVue)
     Print #f, "PIECE|" & Nettoyer(repere) & "|" & qte & "|" & Nettoyer(nom)
     Print #f, "NORMALE " & Num6(normale(0)) & " " & Num6(normale(1)) & " " & Num6(normale(2))
+    If cleVue <> "" Then
+        Print #f, "VUE " & cleVue
+        Print #f, "BASE " & Num6(axesVue(0)) & " " & Num6(axesVue(1)) & " " & Num6(axesVue(2)) & " " & _
+                            Num6(axesVue(3)) & " " & Num6(axesVue(4)) & " " & Num6(axesVue(5))
+        cfgComp = ""
+        On Error Resume Next
+        cfgComp = comp.ReferencedConfiguration
+        On Error GoTo Echec
+        infosPieces(repere) = Array(chemin, cfgComp, cleVue, axesVue(0), axesVue(1), axesVue(2), axesVue(3), axesVue(4), axesVue(5))
+        Journal "    vue standard : " & cleVue & " (configuration '" & cfgComp & "')"
+    Else
+        Journal "    face non parallele a un plan principal : cette piece sera dessinee en traits"
+    End If
     For k = LBound(aretes) To UBound(aretes)
         ligne = PointsArete(aretes(k))
         If ligne <> "" Then
@@ -518,6 +537,12 @@ Private Sub DessinerResultat(ByVal swModel As Object, fResultat As String, fDxf 
         MsgBox "Le calcul a echoue :" & vbCrLf & Mid$(lignes(2), 8), vbCritical, TITRE
         Exit Sub
     End If
+    If Trim$(lignes(1)) <> "DECOUPE-RESULTAT 2" Then
+        Journal "Format de resultat inattendu : " & lignes(1)
+        MsgBox "DecoupeIsolant.exe est trop ancien pour cette macro." & vbCrLf & _
+               "Telechargez la derniere version de l'application et remplacez l'ancien fichier.", vbCritical, TITRE
+        Exit Sub
+    End If
 
     t = Split(lignes(2), " ")        ' PLAQUES n largeur hauteur
     nbPlaques = CLng(Val(t(1)))
@@ -535,16 +560,15 @@ Private Sub DessinerResultat(ByVal swModel As Object, fResultat As String, fDxf 
     End If
     swModel.ActivateSheet nomFeuille
 
-    Dim sm As Object
-    Set sm = swModel.SketchManager
-    sm.InsertSketch True
-    sm.AddToDB = True
-
+    ' ---- passe 1 : les vues (aucune esquisse ne doit etre ouverte) ----
     Dim i As Long, plaque As Long, ox As Double, oy As Double, taux As String
-    Dim q() As String, rep() As String, coord() As String, n As Long, k As Long
-    Dim x1 As Double, y1 As Double, x2 As Double, y2 As Double, nbPoses As Long
-    Dim textes As Collection
-    Set textes = New Collection
+    Dim q() As String, rep() As String, coord() As String, tr() As String
+    Dim n As Long, k As Long, x As Double, y As Double
+    Dim xmin As Double, ymin As Double, xmax As Double, ymax As Double
+    Dim place As Boolean, nbVues As Long, nbTraits As Long, msg As String
+    Dim plaques As Collection, poses As Collection
+    Set plaques = New Collection
+    Set poses = New Collection
 
     oy = ECART_PLAQUES
     For i = 3 To lignes.Count
@@ -554,38 +578,245 @@ Private Sub DessinerResultat(ByVal swModel As Object, fResultat As String, fDxf 
             plaque = CLng(Val(q(1)))
             taux = q(2)
             ox = ECART_PLAQUES + (plaque - 1) * (larg + ECART_PLAQUES)
-            DessinerRectangle sm, ox, oy, ox + larg, oy + haut
-            textes.Add Array("Plaque " & plaque & " - remplissage " & taux & " %", ox, oy + haut + 40)
+            plaques.Add Array(ox, oy, "Plaque " & plaque & " - remplissage " & taux & " %")
         ElseIf Left$(l, 5) = "POSE " Then
-            rep = Split(Mid$(l, 6), "|")            ' repere | etiquette | nom | n x y x y ...
-            coord = Split(rep(3), " ")
+            rep = Split(Mid$(l, 6), "|")     ' repere | etiquette | nom | angle tx ty | n x y x y ...
+            tr = Split(rep(3), " ")
+            coord = Split(rep(4), " ")
             n = CLng(Val(coord(0)))
-            Dim cx As Double, cy As Double
-            cx = 0: cy = 0
+            xmin = 1E+30: ymin = 1E+30: xmax = -1E+30: ymax = -1E+30
             For k = 0 To n - 1
-                x1 = Val(coord(1 + 2 * k)): y1 = Val(coord(2 + 2 * k))
-                x2 = Val(coord(1 + 2 * ((k + 1) Mod n))): y2 = Val(coord(2 + 2 * ((k + 1) Mod n)))
-                TracerSegment sm, ox + x1, oy + y1, ox + x2, oy + y2
-                cx = cx + x1: cy = cy + y1
+                x = Val(coord(1 + 2 * k)): y = Val(coord(2 + 2 * k))
+                If x < xmin Then xmin = x
+                If x > xmax Then xmax = x
+                If y < ymin Then ymin = y
+                If y > ymax Then ymax = y
             Next k
-            textes.Add Array(rep(1), ox + cx / n, oy + cy / n)
-            nbPoses = nbPoses + 1
+            place = False
+            If MODE_VUES Then
+                place = PlacerVue(swModel, rep(0), Val(tr(0)), ox + (xmin + xmax) / 2, oy + (ymin + ymax) / 2, xmax - xmin, ymax - ymin)
+            End If
+            If place Then nbVues = nbVues + 1 Else nbTraits = nbTraits + 1
+            poses.Add Array(rep(1), ox, oy, rep(4), place, (xmin + xmax) / 2, (ymin + ymax) / 2)
         End If
     Next i
 
+    ' ---- passe 2 : cadres des plaques, pieces en traits (si pas de vue) et numeros ----
+    Dim sm As Object, p As Variant, c As Variant
+    Set sm = swModel.SketchManager
+    sm.InsertSketch True
+    sm.AddToDB = True
+    For Each p In plaques
+        DessinerRectangle sm, CDbl(p(0)), CDbl(p(1)), CDbl(p(0)) + larg, CDbl(p(1)) + haut
+    Next p
+    For Each p In poses
+        If Not p(4) Then
+            coord = Split(p(3), " ")
+            n = CLng(Val(coord(0)))
+            For k = 0 To n - 1
+                TracerSegment sm, CDbl(p(1)) + Val(coord(1 + 2 * k)), CDbl(p(2)) + Val(coord(2 + 2 * k)), _
+                              CDbl(p(1)) + Val(coord(1 + 2 * ((k + 1) Mod n))), CDbl(p(2)) + Val(coord(2 + 2 * ((k + 1) Mod n)))
+            Next k
+        End If
+    Next p
     sm.AddToDB = False
     sm.InsertSketch True
     swModel.ClearSelection2 True
 
-    Dim tx As Variant
-    For Each tx In textes
-        PoserTexte swModel, CStr(tx(0)), CDbl(tx(1)), CDbl(tx(2))
-    Next tx
+    For Each p In plaques
+        PoserTexte swModel, CStr(p(2)), CDbl(p(0)), CDbl(p(1)) + haut + 40
+    Next p
+    For Each p In poses
+        PoserTexte swModel, CStr(p(0)), CDbl(p(1)) + CDbl(p(5)), CDbl(p(2)) + CDbl(p(6))
+    Next p
 
     swModel.ViewZoomtofit2
-    Journal nbPoses & " pieces dessinees sur " & nbPlaques & " plaque(s)"
-    MsgBox nbPoses & " pieces reparties sur " & nbPlaques & " plaque(s)." & vbCrLf & _
-           "Feuille creee : " & nomFeuille & vbCrLf & "DXF : " & fDxf, vbInformation, TITRE
+    Journal nbVues & " vues et " & nbTraits & " pieces en traits sur " & nbPlaques & " plaque(s)"
+    msg = (nbVues + nbTraits) & " pieces reparties sur " & nbPlaques & " plaque(s)." & vbCrLf & _
+          nbVues & " en vues, " & nbTraits & " en traits." & vbCrLf & _
+          "Feuille creee : " & nomFeuille & vbCrLf & "DXF : " & fDxf
+    MsgBox msg, vbInformation, TITRE
+End Sub
+
+'--------------------------------------------------------------------------
+' Vue standard dont la direction de regard est la normale de la face
+' Renvoie "" si la face n'est pas parallele a un plan principal.
+' base = axes 2D de la vue (x puis y) exprimes dans le repere de la piece.
+'--------------------------------------------------------------------------
+Private Function ChoisirVue(normale As Variant, ByRef axesVue As Variant) As String
+    Const SEUIL As Double = 0.9995
+    Dim nx As Double, ny As Double, nz As Double, lg As Double
+    nx = CDbl(normale(0)): ny = CDbl(normale(1)): nz = CDbl(normale(2))
+    lg = Sqr(nx * nx + ny * ny + nz * nz)
+    If lg < 0.000001 Then Exit Function
+    nx = nx / lg: ny = ny / lg: nz = nz / lg
+
+    If nz > SEUIL Then
+        ChoisirVue = "Face":    axesVue = Array(1#, 0#, 0#, 0#, 1#, 0#)
+    ElseIf nz < -SEUIL Then
+        ChoisirVue = "Arriere": axesVue = Array(-1#, 0#, 0#, 0#, 1#, 0#)
+    ElseIf ny > SEUIL Then
+        ChoisirVue = "Dessus":  axesVue = Array(1#, 0#, 0#, 0#, 0#, -1#)
+    ElseIf ny < -SEUIL Then
+        ChoisirVue = "Dessous": axesVue = Array(1#, 0#, 0#, 0#, 0#, 1#)
+    ElseIf nx > SEUIL Then
+        ChoisirVue = "Droite":  axesVue = Array(0#, 0#, -1#, 0#, 1#, 0#)
+    ElseIf nx < -SEUIL Then
+        ChoisirVue = "Gauche":  axesVue = Array(0#, 0#, 1#, 0#, 1#, 0#)
+    End If
+End Function
+
+' Noms possibles de la vue (francais puis anglais) selon la langue de SolidWorks
+Private Function NomsVue(cle As String) As Variant
+    Select Case cle
+        Case "Face":    NomsVue = Array("*Face", "*Front")
+        Case "Arriere": NomsVue = Array("*Arrière", "*Arriere", "*Back")
+        Case "Dessus":  NomsVue = Array("*Dessus", "*Top")
+        Case "Dessous": NomsVue = Array("*Dessous", "*Bottom")
+        Case "Gauche":  NomsVue = Array("*Gauche", "*Left")
+        Case "Droite":  NomsVue = Array("*Droite", "*Right")
+        Case Else:      NomsVue = Array("*Face")
+    End Select
+End Function
+
+Private Function Atan2(y As Double, x As Double) As Double
+    If x > 0 Then
+        Atan2 = Atn(y / x)
+    ElseIf x < 0 Then
+        If y >= 0 Then
+            Atan2 = Atn(y / x) + PI
+        Else
+            Atan2 = Atn(y / x) - PI
+        End If
+    ElseIf y > 0 Then
+        Atan2 = PI / 2
+    ElseIf y < 0 Then
+        Atan2 = -PI / 2
+    End If
+End Function
+
+' Ecart d'angle ramene entre -PI et PI
+Private Function EcartAngle(ByVal a As Double) As Double
+    Do While a > PI
+        a = a - 2 * PI
+    Loop
+    Do While a < -PI
+        a = a + 2 * PI
+    Loop
+    EcartAngle = a
+End Function
+
+' Angle (dans le plan de la feuille) d'un vecteur du modele, apres transformation de la vue
+Private Function AngleVecteur(ByVal v As Object, ux As Double, uy As Double, uz As Double, ByRef longueur As Double) As Double
+    Dim mu As Object, xf As Object, p0 As Object, p1 As Object, a As Variant, b As Variant
+    Dim dx As Double, dy As Double
+    Set mu = swApp.GetMathUtility
+    Set xf = v.ModelToViewTransform
+    Set p0 = mu.CreatePoint(Array(0#, 0#, 0#))
+    Set p1 = mu.CreatePoint(Array(ux * 0.1, uy * 0.1, uz * 0.1))
+    a = p0.MultiplyTransform(xf).ArrayData
+    b = p1.MultiplyTransform(xf).ArrayData
+    dx = CDbl(b(0)) - CDbl(a(0))
+    dy = CDbl(b(1)) - CDbl(a(1))
+    longueur = Sqr(dx * dx + dy * dy)
+    AngleVecteur = Atan2(dy, dx)
+End Function
+
+'--------------------------------------------------------------------------
+' Cree la vue du modele, la tourne de thetaDeg et centre sa boite sur (cxMm, cyMm)
+' Renvoie False si la vue n'a pas pu etre creee correctement (la piece est alors tracee en traits).
+'--------------------------------------------------------------------------
+Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg As Double, _
+                           cxMm As Double, cyMm As Double, wMm As Double, hMm As Double) As Boolean
+    Dim info As Variant, noms As Variant, i As Long, v As Object
+    Dim th As Double, a0 As Double, aV0 As Double, a1 As Double, lg As Double
+    Dim ol As Variant, pos As Variant, dx As Double, dy As Double, nomVue As String
+
+    If infosPieces Is Nothing Then Exit Function
+    If Not infosPieces.Exists(repere) Then
+        Journal "  repere " & repere & " : pas d'information de vue, trace en traits"
+        Exit Function
+    End If
+    info = infosPieces(repere)
+    noms = NomsVue(CStr(info(2)))
+
+    For i = LBound(noms) To UBound(noms)
+        Set v = Nothing
+        On Error Resume Next
+        Set v = swModel.CreateDrawViewFromModelView3(CStr(info(0)), CStr(noms(i)), cxMm / 1000#, cyMm / 1000#, 0#)
+        If Err.Number <> 0 Then
+            Journal "  vue '" & noms(i) & "' : " & Err.Description
+            Err.Clear
+        End If
+        On Error GoTo 0
+        If Not v Is Nothing Then
+            Journal "  repere " & repere & " : vue '" & noms(i) & "' creee"
+            Exit For
+        End If
+    Next i
+    If v Is Nothing Then
+        Journal "  repere " & repere & " : creation de la vue impossible, trace en traits"
+        Exit Function
+    End If
+
+    On Error GoTo Echec
+
+    On Error Resume Next                    ' configuration de la piece dans l'assemblage (facultatif)
+    v.ReferencedConfiguration = CStr(info(1))
+    Err.Clear
+    On Error GoTo Echec
+
+    ' 1) la vue doit montrer le repere de la piece comme prevu : axe u vers la droite, axe v vers le haut
+    a0 = AngleVecteur(v, CDbl(info(3)), CDbl(info(4)), CDbl(info(5)), lg)
+    aV0 = AngleVecteur(v, CDbl(info(6)), CDbl(info(7)), CDbl(info(8)), lg)
+    If Abs(EcartAngle(a0)) > 0.02 Or Abs(EcartAngle(aV0 - a0 - PI / 2)) > 0.02 Then
+        Journal "  repere " & repere & " : orientation de la vue differente de celle prevue (u " & Format$(a0, "0.000") & _
+                " rad, v " & Format$(aV0, "0.000") & " rad) : vue supprimee, trace en traits"
+        SupprimerVue swModel, v
+        Exit Function
+    End If
+
+    ' 2) rotation (le sens est verifie sur l'axe u de la piece)
+    th = thetaDeg * PI / 180#
+    If Abs(th) > 0.0001 Then
+        v.Angle = th
+        a1 = AngleVecteur(v, CDbl(info(3)), CDbl(info(4)), CDbl(info(5)), lg)
+        If Abs(EcartAngle(a1 - a0 - th)) > 0.02 Then
+            v.Angle = -th
+            a1 = AngleVecteur(v, CDbl(info(3)), CDbl(info(4)), CDbl(info(5)), lg)
+            Journal "  repere " & repere & " : sens de rotation inverse (ecart " & Format$(EcartAngle(a1 - a0 - th), "0.000") & ")"
+        End If
+    End If
+
+    ' 3) centrage : la boite de la vue doit etre centree sur celle de la piece posee
+    ol = v.GetOutline
+    Journal "    boite de la vue : " & Format$((ol(2) - ol(0)) * 1000#, "0.0") & " x " & Format$((ol(3) - ol(1)) * 1000#, "0.0") & _
+            " mm (attendu " & Format$(wMm, "0.0") & " x " & Format$(hMm, "0.0") & ")"
+    dx = cxMm / 1000# - (CDbl(ol(0)) + CDbl(ol(2))) / 2#
+    dy = cyMm / 1000# - (CDbl(ol(1)) + CDbl(ol(3))) / 2#
+    pos = v.Position
+    v.Position = Array(CDbl(pos(0)) + dx, CDbl(pos(1)) + dy)
+    ol = v.GetOutline
+    Journal "    ecart de centrage apres deplacement : " & Format$((cxMm / 1000# - (CDbl(ol(0)) + CDbl(ol(2))) / 2#) * 1000#, "0.00") & _
+            " ; " & Format$((cyMm / 1000# - (CDbl(ol(1)) + CDbl(ol(3))) / 2#) * 1000#, "0.00") & " mm"
+    PlacerVue = True
+    Exit Function
+
+Echec:
+    Journal "  repere " & repere & " : ERREUR pendant le placement de la vue (" & Err.Description & ") : vue supprimee, trace en traits"
+    Err.Clear
+    On Error Resume Next
+    SupprimerVue swModel, v
+End Function
+
+Private Sub SupprimerVue(ByVal swModel As Object, ByVal v As Object)
+    Dim nom As String
+    On Error Resume Next
+    nom = v.GetName2
+    swModel.ClearSelection2 True
+    swModel.Extension.SelectByID2 nom, "DRAWINGVIEW", 0#, 0#, 0#, False, 0, Nothing, 0
+    swModel.EditDelete
+    swModel.ClearSelection2 True
 End Sub
 
 ' Trace un segment (coordonnees en mm, repere de la feuille)

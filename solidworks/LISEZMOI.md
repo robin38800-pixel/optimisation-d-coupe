@@ -5,8 +5,17 @@ Depuis une **mise en plan avec nomenclature**, la macro :
 1. lit la nomenclature (repère et **quantité** de chaque pièce) ;
 2. relève le contour de la **plus grande face plane** de chaque pièce 3D (vraie grandeur, pas de problème d'échelle de vue) ;
 3. appelle `DecoupeIsolant.exe`, qui répartit toutes les pièces dans des plaques de 1500 x 1000 mm ;
-4. crée une **nouvelle feuille « Plaques hhmmss »** dans la mise en plan avec les plaques, les pièces et leur repère
-   (repère-1, repère-2... quand la quantité est supérieure à 1), et écrit aussi un DXF `<nom du plan>_plaques.dxf`.
+4. crée une **nouvelle feuille « Plaques hhmmss »** (échelle 1:1) dans la mise en plan avec les plaques et, pour chaque
+   pièce, une **vraie vue du modèle** (liée à la pièce, cotable), tournée et placée à l'endroit calculé, avec son repère
+   (repère-1, repère-2... quand la quantité est supérieure à 1). Elle écrit aussi un DXF `<nom du plan>_plaques.dxf`.
+
+La vue utilisée est la vue standard (*Face, *Dessus, *Droite, *Arrière, *Dessous ou *Gauche) qui regarde la grande face
+de la pièce. Si la face n'est pas parallèle à un plan principal, ou si SolidWorks ne crée pas la vue attendue, la pièce
+est **tracée en traits** à la place (le message final indique « x en vues, y en traits ») ; le journal explique pourquoi.
+Pour n'avoir que des traits, mettez `MODE_VUES` à `False` en haut du fichier `.bas`.
+
+> **Mettez à jour ensemble la macro et `DecoupeIsolant.exe`** : ils échangent un fichier dont le format a changé
+> (la macro le signale si l'exe est trop ancien).
 
 > **Version d'essai.** La macro a été écrite pour SolidWorks 2024 sans pouvoir être lancée sur SolidWorks lui-même.
 > Si elle affiche une erreur, envoyez le **journal** (voir plus bas) : il indique l'étape exacte.
