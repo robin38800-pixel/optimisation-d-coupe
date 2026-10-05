@@ -21,6 +21,12 @@ La première ouverture peut afficher un avertissement Windows SmartScreen (appli
 « Informations complémentaires » > « Exécuter quand même ». Le même programme accepte aussi toutes les
 options en ligne de commande (`DecoupeIsolant.exe fichier.dxf -o sortie.dxf ...`).
 
+## Intégration SolidWorks
+
+Une macro (dossier `solidworks/`, mode d'emploi dans `solidworks/LISEZMOI.md`) lit la nomenclature d'une mise en
+plan, relève le contour de la grande face de chaque isolant, appelle l'application et crée une feuille
+« Plaques » dans la mise en plan. En ligne de commande : `--echange entree.txt --resultat-echange resultat.txt`.
+
 ## Installation (version Python)
 
 ```bash

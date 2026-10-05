@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .apercu import ecrire_svg
+from .echange import ecrire_erreur, ecrire_resultat, pieces_depuis_echange
 from .dxf_io import decrire_pieces, ecrire_dxf, filtrer_pieces, lire_dxf
 from .modeles import Parametres
 from .nesting import ErreurPlacement, optimiser, verifier
@@ -17,7 +18,11 @@ def _arguments(argv=None) -> argparse.Namespace:
         description="Place les découpes d'un DXF dans des plaques (1500 x 1000 mm par défaut) "
         "en minimisant le nombre de plaques et la chute.",
     )
-    p.add_argument("entree", help="DXF contenant toutes les découpes (contours fermés)")
+    p.add_argument("entree", nargs="?", help="DXF contenant toutes les découpes (contours fermés)")
+    p.add_argument("--echange", metavar="FICHIER.txt",
+                   help="au lieu d'un DXF : fichier d'échange écrit par la macro SolidWorks (avec les quantités)")
+    p.add_argument("--resultat-echange", metavar="FICHIER.txt",
+                   help="écrit le résultat au format d'échange lu par la macro SolidWorks")
     p.add_argument("-o", "--sortie", default="sortie.dxf", help="DXF de résultat (défaut : sortie.dxf)")
     p.add_argument("--largeur", type=float, default=1500.0, help="largeur de la plaque en mm (défaut 1500)")
     p.add_argument("--hauteur", type=float, default=1000.0, help="hauteur de la plaque en mm (défaut 1000)")
@@ -54,14 +59,31 @@ def _arguments(argv=None) -> argparse.Namespace:
 
 def main(argv=None) -> int:
     a = _arguments(argv)
-    try:
-        lecture = lire_dxf(a.entree, calques=a.calque, tolerance_arc=a.tolerance_arc, echelle=a.echelle)
-    except (OSError, ValueError) as exc:
-        print(f"Erreur de lecture : {exc}", file=sys.stderr)
-        return 2
-    for av in lecture.avertissements:
-        print(f"Attention : {av}", file=sys.stderr)
-    pieces, retirees = filtrer_pieces(lecture.pieces, a.ignorer_profils, a.ignorer)
+
+    def echec(message: str, code: int) -> int:
+        print(f"Erreur : {message}", file=sys.stderr)
+        if a.resultat_echange:
+            ecrire_erreur(a.resultat_echange, message)
+        return code
+
+    if a.echange:
+        try:
+            pieces, avertissements = pieces_depuis_echange(a.echange)
+        except (OSError, ValueError) as exc:
+            return echec(f"lecture du fichier d'échange impossible : {exc}", 2)
+        for av in avertissements:
+            print(f"Attention : {av}", file=sys.stderr)
+        retirees = []
+    elif a.entree:
+        try:
+            lecture = lire_dxf(a.entree, calques=a.calque, tolerance_arc=a.tolerance_arc, echelle=a.echelle)
+        except (OSError, ValueError) as exc:
+            return echec(f"lecture impossible : {exc}", 2)
+        for av in lecture.avertissements:
+            print(f"Attention : {av}", file=sys.stderr)
+        pieces, retirees = filtrer_pieces(lecture.pieces, a.ignorer_profils, a.ignorer)
+    else:
+        return echec("indiquez un fichier DXF, ou --echange pour un fichier SolidWorks", 2)
     if retirees:
         print(f"{len(retirees)} contour(s) ignoré(s) : {', '.join(retirees)}")
     if a.lister:
@@ -69,8 +91,7 @@ def main(argv=None) -> int:
         print(decrire_pieces(pieces))
         return 0
     if not pieces:
-        print("Aucun contour fermé trouvé dans le DXF.", file=sys.stderr)
-        return 2
+        return echec("aucun contour fermé exploitable trouvé", 2)
 
     params = Parametres(
         largeur=a.largeur, hauteur=a.hauteur, espacement=a.espacement, marge=a.marge,
@@ -87,7 +108,7 @@ def main(argv=None) -> int:
     try:
         resultat = optimiser(pieces, params, rappel=print)
     except ErreurPlacement as exc:
-        print(f"Erreur : {exc}", file=sys.stderr)
+        echec(str(exc), 1)
         print("Astuce : `--lister` montre les contours lus ; `--calque`, `--ignorer` et `--ignorer-profils` "
               "permettent d'écarter cadres, cotations et vues de profil.", file=sys.stderr)
         return 1
@@ -103,6 +124,8 @@ def main(argv=None) -> int:
         print(f"  Plaque {pl.index + 1} : {len(pl.pieces)} pièces, remplissage {100 * resultat.taux_plaque(pl):.1f} %, "
               f"zone utilisée {l:.0f} x {h:.0f} mm")
 
+    if a.resultat_echange:
+        ecrire_resultat(a.resultat_echange, resultat)
     for f in ecrire_dxf(a.sortie, resultat, etiquettes=not a.sans_etiquettes, separe=a.separe):
         print(f"DXF écrit : {f}")
     if a.apercu:

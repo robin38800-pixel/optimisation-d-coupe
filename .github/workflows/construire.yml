@@ -70,6 +70,7 @@ jobs:
         run: |
           mkdir -p livraison
           cp README.md livraison/LISEZMOI.md
+          cp -R solidworks livraison/solidworks
           if [ "${{ matrix.nom }}" = "Windows" ]; then cp dist/DecoupeIsolant.exe livraison/; fi
           if [ "${{ matrix.nom }}" = "Linux" ]; then cp dist/DecoupeIsolant livraison/; fi
           if [ "${{ matrix.nom }}" = "macOS" ]; then cp -R dist/DecoupeIsolant.app livraison/; fi
