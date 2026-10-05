@@ -9,7 +9,7 @@ Depuis une **mise en plan avec nomenclature**, la macro :
 3. appelle `DecoupeIsolant.exe`, qui répartit toutes les pièces dans des plaques de 1500 x 1000 mm ;
 4. crée une **nouvelle feuille « Plaques hhmmss »** (échelle 1:1) dans la mise en plan avec les plaques et, pour chaque
    pièce, une **vraie vue du modèle** (liée à la pièce, cotable), tournée et placée à l'endroit calculé, avec son repère
-   (repère-1, repère-2... quand la quantité est supérieure à 1). Elle écrit aussi un DXF `<nom du plan>_plaques.dxf`.
+   (repère-1, repère-2... quand la quantité est supérieure à 1). Aucun DXF n'est créé à côté du plan.
 
 La vue utilisée est la vue standard (*Face, *Dessus, *Droite, *Arrière, *Dessous ou *Gauche) qui regarde la grande face
 de la pièce. Si la face n'est pas parallèle à un plan principal, ou si SolidWorks ne crée pas la vue attendue, la pièce
