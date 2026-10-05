@@ -854,14 +854,42 @@ Private Function AngleVecteur(ByVal v As Object, ux As Double, uy As Double, uz 
 End Function
 
 '--------------------------------------------------------------------------
+' Cree une vue standard du modele (noms francais puis anglais)
+'--------------------------------------------------------------------------
+Private Function CreerVue(ByVal swModel As Object, cle As String, chemin As String, _
+                          cxMm As Double, cyMm As Double) As Object
+    Dim noms As Variant, i As Long, v As Object
+    noms = NomsVue(cle)
+    For i = LBound(noms) To UBound(noms)
+        Set v = Nothing
+        On Error Resume Next
+        Set v = swModel.CreateDrawViewFromModelView3(chemin, CStr(noms(i)), cxMm / 1000#, cyMm / 1000#, 0#)
+        If Err.Number <> 0 Then
+            Journal "  vue '" & noms(i) & "' : " & Err.Description
+            Err.Clear
+        End If
+        On Error GoTo 0
+        If Not v Is Nothing Then
+            Set CreerVue = v
+            Exit Function
+        End If
+    Next i
+End Function
+
+'--------------------------------------------------------------------------
 ' Cree la vue du modele, la tourne de thetaDeg et centre sa boite sur (cxMm, cyMm)
+' Parmi les vues standard, on garde celle qui regarde la grande face de face
+' (mesure sur la transformation de la vue, quel que soit son nom).
 ' Renvoie False si la vue n'a pas pu etre creee correctement (la piece est alors tracee en traits).
 '--------------------------------------------------------------------------
 Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg As Double, _
                            cxMm As Double, cyMm As Double, wMm As Double, hMm As Double) As Boolean
-    Dim info As Variant, noms As Variant, i As Long, v As Object
-    Dim th As Double, a0 As Double, aV0 As Double, a1 As Double, lg As Double
-    Dim ol As Variant, pos As Variant, dx As Double, dy As Double, nomVue As String
+    Dim info As Variant, cles As Variant, k As Long, cle As String, v As Object, ok As Boolean
+    Dim ux As Double, uy As Double, uz As Double, vx As Double, vy As Double, vz As Double
+    Dim nx As Double, ny As Double, nz As Double
+    Dim th As Double, a0 As Double, aV0 As Double, aN As Double, a1 As Double
+    Dim lgU As Double, lgV As Double, lgN As Double
+    Dim essais As Variant, e As Long, ol As Variant, pos As Variant, dx As Double, dy As Double
 
     If infosPieces Is Nothing Then Exit Function
     If Not infosPieces.Exists(repere) Then
@@ -869,57 +897,75 @@ Private Function PlacerVue(ByVal swModel As Object, repere As String, thetaDeg A
         Exit Function
     End If
     info = infosPieces(repere)
-    noms = NomsVue(CStr(info(2)))
+    ux = CDbl(info(3)): uy = CDbl(info(4)): uz = CDbl(info(5))
+    vx = CDbl(info(6)): vy = CDbl(info(7)): vz = CDbl(info(8))
+    nx = uy * vz - uz * vy                  ' normale = u x v
+    ny = uz * vx - ux * vz
+    nz = ux * vy - uy * vx
 
-    For i = LBound(noms) To UBound(noms)
-        Set v = Nothing
-        On Error Resume Next
-        Set v = swModel.CreateDrawViewFromModelView3(CStr(info(0)), CStr(noms(i)), cxMm / 1000#, cyMm / 1000#, 0#)
-        If Err.Number <> 0 Then
-            Journal "  vue '" & noms(i) & "' : " & Err.Description
-            Err.Clear
+    cles = Array(CStr(info(2)), "Face", "Arriere", "Dessus", "Dessous", "Gauche", "Droite")
+    For k = LBound(cles) To UBound(cles)
+        cle = CStr(cles(k))
+        If k = 0 Or cle <> CStr(info(2)) Then
+            Set v = CreerVue(swModel, cle, CStr(info(0)), cxMm, cyMm)
+            If v Is Nothing Then
+                Journal "  repere " & repere & " : creation de la vue " & cle & " impossible"
+            Else
+                On Error Resume Next
+                a0 = AngleVecteur(v, ux, uy, uz, lgU)
+                aV0 = AngleVecteur(v, vx, vy, vz, lgV)
+                aN = AngleVecteur(v, nx, ny, nz, lgN)
+                If Err.Number <> 0 Then
+                    Journal "  repere " & repere & " : mesure de la vue impossible (" & Err.Description & ")"
+                    Err.Clear
+                    lgU = 0#
+                End If
+                On Error GoTo 0
+                Journal "  repere " & repere & " : essai vue " & cle & " : u " & Format$(a0, "0.000") & " rad (long. " & _
+                        Format$(lgU, "0.0000") & "), v " & Format$(aV0, "0.000") & " rad (" & Format$(lgV, "0.0000") & _
+                        "), normale (" & Format$(lgN, "0.0000") & ")"
+                If lgU > 0.0001 And lgN < 0.1 * lgU And Abs(lgV - lgU) < 0.1 * lgU And _
+                   Abs(EcartAngle(aV0 - a0 - PI / 2)) < 0.02 Then
+                    ok = True
+                    Exit For
+                End If
+                SupprimerVue swModel, v
+                Set v = Nothing
+            End If
         End If
-        On Error GoTo 0
-        If Not v Is Nothing Then
-            Journal "  repere " & repere & " : vue '" & noms(i) & "' creee"
-            Exit For
-        End If
-    Next i
-    If v Is Nothing Then
-        Journal "  repere " & repere & " : creation de la vue impossible, trace en traits"
+    Next k
+    If Not ok Then
+        Journal "  repere " & repere & " : aucune vue standard ne regarde la face de face, trace en traits"
         Exit Function
     End If
+    Journal "  repere " & repere & " : vue " & cle & " retenue"
 
     On Error GoTo Echec
 
-    On Error Resume Next                    ' configuration de la piece dans l'assemblage (facultatif)
+    On Error Resume Next                    ' configuration de la piece (facultatif)
     v.ReferencedConfiguration = CStr(info(1))
     Err.Clear
     On Error GoTo Echec
 
-    ' 1) la vue doit montrer le repere de la piece comme prevu : axe u vers la droite, axe v vers le haut
-    a0 = AngleVecteur(v, CDbl(info(3)), CDbl(info(4)), CDbl(info(5)), lg)
-    aV0 = AngleVecteur(v, CDbl(info(6)), CDbl(info(7)), CDbl(info(8)), lg)
-    If Abs(EcartAngle(a0)) > 0.02 Or Abs(EcartAngle(aV0 - a0 - PI / 2)) > 0.02 Then
-        Journal "  repere " & repere & " : orientation de la vue differente de celle prevue (u " & Format$(a0, "0.000") & _
-                " rad, v " & Format$(aV0, "0.000") & " rad) : vue supprimee, trace en traits"
-        SupprimerVue swModel, v
-        Exit Function
-    End If
-
-    ' 2) rotation (le sens est verifie sur l'axe u de la piece)
+    ' rotation : l'axe u de la piece doit finir a l'angle th (le sens et l'origine de v.Angle sont verifies)
     th = thetaDeg * PI / 180#
-    If Abs(th) > 0.0001 Then
-        v.Angle = th
-        a1 = AngleVecteur(v, CDbl(info(3)), CDbl(info(4)), CDbl(info(5)), lg)
-        If Abs(EcartAngle(a1 - a0 - th)) > 0.02 Then
-            v.Angle = -th
-            a1 = AngleVecteur(v, CDbl(info(3)), CDbl(info(4)), CDbl(info(5)), lg)
-            Journal "  repere " & repere & " : sens de rotation inverse (ecart " & Format$(EcartAngle(a1 - a0 - th), "0.000") & ")"
+    If Abs(EcartAngle(th - a0)) > 0.0001 Then
+        essais = Array(EcartAngle(th - a0), -EcartAngle(th - a0), th, -th)
+        For e = LBound(essais) To UBound(essais)
+            v.Angle = CDbl(essais(e))
+            a1 = AngleVecteur(v, ux, uy, uz, lgU)
+            If Abs(EcartAngle(a1 - th)) <= 0.02 Then Exit For
+        Next e
+        If Abs(EcartAngle(a1 - th)) > 0.02 Then
+            Journal "  repere " & repere & " : rotation non obtenue (angle " & Format$(a1, "0.000") & " au lieu de " & _
+                    Format$(th, "0.000") & ") : vue supprimee, trace en traits"
+            SupprimerVue swModel, v
+            Exit Function
         End If
+        Journal "  repere " & repere & " : rotation " & Format$(CDbl(essais(e)), "0.000") & " rad appliquee"
     End If
 
-    ' 3) centrage : la boite de la vue doit etre centree sur celle de la piece posee
+    ' centrage : la boite de la vue doit etre centree sur celle de la piece posee
     ol = v.GetOutline
     Journal "    boite de la vue : " & Format$((ol(2) - ol(0)) * 1000#, "0.0") & " x " & Format$((ol(3) - ol(1)) * 1000#, "0.0") & _
             " mm (attendu " & Format$(wMm, "0.0") & " x " & Format$(hMm, "0.0") & ")"
