@@ -507,12 +507,28 @@ Private Function Normaliser(s As String) As String
 End Function
 
 Private Function CheminPourLigne(designation As String, ByRef cfg As String) As String
-    Dim cle As String, v As Object, chemin As String, nomFic As String
-    Dim i As Long, dossier As String, trouve As String, chemDessin As String
+    Dim cle As String, p As Long, r As String
 
     cle = designation
     If InStr(cle, ":") > 0 Then cle = Mid$(cle, InStr(cle, ":") + 1)
     cle = Trim$(cle)
+    If cle = "" Then Exit Function
+
+    ' 1) nom complet ; 2) sans l'indice de revision final (ex. "-A") qui n'est pas dans le nom du fichier
+    r = ChercherPiece(cle, cfg)
+    If r = "" Then
+        p = InStrRev(cle, "-")
+        If p > 1 Then
+            If Len(cle) - p <= 2 Then r = ChercherPiece(Trim$(Left$(cle, p - 1)), cfg)
+        End If
+    End If
+    CheminPourLigne = r
+End Function
+
+Private Function ChercherPiece(cle As String, ByRef cfg As String) As String
+    Dim v As Object, chemin As String, nomFic As String
+    Dim i As Long, dossier As String, trouve As String, chemDessin As String
+
     If cle = "" Then Exit Function
     cfg = ""
 
@@ -529,7 +545,7 @@ Private Function CheminPourLigne(designation As String, ByRef cfg As String) As 
             If InStr(Normaliser(nomFic), Normaliser(cle)) > 0 Then
                 cfg = v.ReferencedConfiguration
                 If Err.Number <> 0 Then Err.Clear
-                CheminPourLigne = chemin
+                ChercherPiece = chemin
                 Exit Function
             End If
         End If
@@ -546,7 +562,7 @@ Private Function CheminPourLigne(designation As String, ByRef cfg As String) As 
     If chemDessin <> "" Then
         dossier = Left$(chemDessin, InStrRev(chemDessin, "\"))
         trouve = Dir(dossier & "*" & cle & "*.SLDPRT")
-        If trouve <> "" Then CheminPourLigne = dossier & trouve
+        If trouve <> "" Then ChercherPiece = dossier & trouve
     End If
 End Function
 
