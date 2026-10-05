@@ -34,8 +34,7 @@ Const swDwgTemplateNone As Long = 7
 Const TITRE As String = "Decoupe isolant"
 
 Dim swApp As Object
-Dim numLog As Integer
-Dim logOuvert As Boolean
+Dim cheminJournal As String
 
 '==========================================================================
 ' Programme principal
@@ -583,19 +582,25 @@ Private Function Nettoyer(s As String) As String
 End Function
 
 Private Sub OuvrirJournal(chemin As String)
-    numLog = FreeFile
-    Open chemin For Output As #numLog
-    logOuvert = True
+    Dim n As Integer
+    cheminJournal = chemin
+    n = FreeFile
+    Open cheminJournal For Output As #n
+    Close #n
     Journal "=== " & TITRE & " - " & Format$(Now, "dd/mm/yyyy hh:nn:ss") & " ==="
 End Sub
 
+' Chaque ligne est ecrite et le fichier referme aussitot : le journal est lisible meme pendant un message
 Private Sub Journal(s As String)
-    If logOuvert Then Print #numLog, s
+    Dim n As Integer
+    If cheminJournal = "" Then Exit Sub
+    On Error Resume Next
+    n = FreeFile
+    Open cheminJournal For Append As #n
+    Print #n, s
+    Close #n
 End Sub
 
 Private Sub FermerJournal()
-    If logOuvert Then
-        Close #numLog
-        logOuvert = False
-    End If
+    ' rien a faire : le journal est ferme apres chaque ligne
 End Sub
